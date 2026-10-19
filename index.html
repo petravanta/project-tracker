@@ -142,6 +142,7 @@ textarea{resize:vertical}
 .names li{height:var(--row);display:flex;align-items:center;gap:4px;padding:0 6px 0 2px;border-bottom:1px solid var(--line);background:var(--surface);position:relative}
 .names li.lifted{z-index:5;box-shadow:0 4px 14px rgba(0,0,0,.18);border-radius:6px}
 .names.sorting li:not(.lifted){transition:transform .12s ease}
+.names li.drop-in{background:var(--accent-soft);box-shadow:inset 0 0 0 2px var(--accent);border-radius:6px}
 .grip{flex:none;width:20px;height:32px;border:0;background:none;padding:0;display:grid;place-items:center;color:var(--faint);cursor:grab;touch-action:none}
 .grip:hover{color:var(--ink)}
 .grip:active{cursor:grabbing}
@@ -675,7 +676,7 @@ function renderGantt(p, all, plan) {
       <button type="button" class="grip" data-grip="${esc(t.id)}" aria-label="Reorder ${esc(t.name || 'Untitled')}: drag, or use the arrow keys (left and right move it out of or into a group)"><svg viewBox="0 0 10 16" fill="currentColor"><circle cx="2.5" cy="3" r="1.5"/><circle cx="7.5" cy="3" r="1.5"/><circle cx="2.5" cy="8" r="1.5"/><circle cx="7.5" cy="8" r="1.5"/><circle cx="2.5" cy="13" r="1.5"/><circle cx="7.5" cy="13" r="1.5"/></svg></button>
       ${fold(t)}<button type="button" class="tick${t.duration === 0 && !t.group ? ' ms' : ''}" data-tick="${esc(t.id)}" aria-pressed="${plan.S.get(t.id).progress >= 100 && plan.S.get(t.id).w > 0}" aria-label="${esc(t.name || 'Untitled')} done"><svg viewBox="0 0 12 12"><path d="M2 6.5l2.5 2.5L10 3" fill="none" stroke="var(--accent-ink)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       <button type="button" class="tname${plan.S.get(t.id).progress >= 100 && plan.S.get(t.id).w > 0 ? ' done' : ''}" data-edit="${esc(t.id)}" title="${esc(t.name || 'Untitled')}">${esc(t.name || 'Untitled')}</button></li>`).join('')}</ol>`;
-  ch.innerHTML = `<svg id="svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-label="Gantt chart">${defs}${out.join('')}<g>${links.join('')}</g>${bars.join('')}<g id="ghost"></g></svg>`;
+  ch.innerHTML = `<svg id="svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-label="Gantt chart">${defs}${out.join('')}<rect id="dropBand" x="0" width="${W}" height="${ROW}" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="2" visibility="hidden"/><g>${links.join('')}</g>${bars.join('')}<g id="ghost"></g></svg>`;
   $('#foot').innerHTML = `
       <span class="key"><i style="background:var(--c-teal)"></i>Done part</span>
       <span class="key"><i style="background:var(--c-teal);opacity:.25"></i>Still to do</span>
@@ -773,22 +774,37 @@ function wireGrips() {
         const dy = clamp(ev.clientY - R.y0, -i * ROW, (rows.length - 1 - i) * ROW);
         R.to = clamp(i + Math.round(dy / ROW), 0, rows.length - 1);
         R.dx = ev.clientX - R.x0;
-        li.style.transform = `translate(${clamp(R.dx, -48, 0)}px,${dy}px)`;
-        rows.forEach((r, k) => { if (r !== li) r.style.transform = k > i && k <= R.to ? `translateY(${-ROW}px)` : k < i && k >= R.to ? `translateY(${ROW}px)` : ''; });
+        // Held over the middle of a group's row: it goes into that group, which lights up behind it, and nothing slides
+        const at = i + dy / ROW, k = Math.round(at), over = G.tasks[k];
+        R.into = k !== i && Math.abs(at - k) < .3 && over?.group && over.id !== R.id && !inside(over.id, R.id) ? over.id : null;
+        li.style.transform = `translate(${R.into ? 28 : clamp(R.dx, -48, 0)}px,${dy}px)`;
+        const band = $('#dropBand');
+        if (band) { band.setAttribute('visibility', R.into ? 'visible' : 'hidden'); band.setAttribute('y', HEAD + k * ROW); }
+        rows.forEach((r, n) => {
+          r.classList.toggle('drop-in', !!R.into && n === k);
+          if (r !== li) r.style.transform = R.into ? '' : n > i && n <= R.to ? `translateY(${-ROW}px)` : n < i && n >= R.to ? `translateY(${ROW}px)` : '';
+        });
       };
       g.onpointerup = g.onpointercancel = ev => {
         g.onpointermove = g.onpointerup = g.onpointercancel = null;
         names.classList.remove('sorting');
-        rows.forEach(r => { r.style.transform = ''; r.classList.remove('lifted'); });
+        rows.forEach(r => { r.style.transform = ''; r.classList.remove('lifted', 'drop-in'); });
+        $('#dropBand')?.setAttribute('visibility', 'hidden');
         if (ev.type === 'pointerup' && !dropRow(R)) render();
       };
     };
   });
 }
-/* Where a dragged row lands. It goes after the row it was dropped below: into that row if it's an open group,
-   otherwise next to it. Dragging left as well takes it out one level per 30px. */
+/* Where a dragged row lands. Dropped onto a group's row, it goes in at the end of that group. Otherwise it goes
+   after the row it was dropped below: into that row if it's an open group, otherwise next to it. Dragging left as well takes it out one level per 30px. */
 function dropRow(R) {
   const vis = G.tasks, i = R.i, id = R.id;
+  if (R.into) {
+    const g = findTask(R.into);
+    if (g.collapsed) { g.collapsed = false; touch(g); }
+    if (placeTask(id, g.id, (treeOf(mine()).kids.get(g.id) || []).length)) return toast(`Moved into ${g.name || 'the group'}`), true;
+    return false;
+  }
   if (R.to === i && R.dx > -30) return false;
   let above = R.to > i ? vis[R.to] : R.to === i ? vis[i - 1] : vis[R.to - 1];
   if (above && (above.id === id || inside(above.id, id))) return false;
@@ -950,7 +966,7 @@ function editGroup(t, isNew) {
   const plan = schedule(cur(), mine()), r = plan.S.get(t.id), n = plan.T.kids.get(t.id).length;
   openDrawer(isNew ? 'New group' : (t.name || 'Group'), `
     <label class="field">Name<input type="text" id="tName" value="${esc(t.name)}" placeholder="Week one" autocomplete="off"></label>
-    <p class="note">${n ? `${n} item${n === 1 ? '' : 's'} · ${esc(whenText(t, r))} · ${r.progress}% done.` : 'Nothing in it yet.'} Drag a task’s handle just below the group to put it in, or pick the group in the task’s editor.</p>
+    <p class="note">${n ? `${n} item${n === 1 ? '' : 's'} · ${esc(whenText(t, r))} · ${r.progress}% done.` : 'Nothing in it yet.'} Drag a task by its handle onto the group to put it in, or pick the group in the task’s editor.</p>
     ${groupPicker(t)}
     <div class="field">Color<div class="swatches" role="group" aria-label="Color">${COLORS.map(c => `<button type="button" class="swatch" style="--sw:var(--c-${c})" data-color="${c}" aria-label="${COLOR_NAMES[c]}" aria-pressed="${c === t.color}"></button>`).join('')}</div></div>
     <label class="field">Notes<textarea id="tNotes" rows="3">${esc(t.notes || '')}</textarea></label>
