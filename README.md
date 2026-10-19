@@ -14,7 +14,8 @@ Plan a project as a Gantt chart: tasks with durations and dates, links for what 
 ## What it does
 
 - **Zoom** from days through weeks, months and quarters to years, for projects that run from a few days to many years. Use **−** and **+**, pick a scale from the menu, or **Fit** to see the whole project at once (Ctrl or ⌘ with the scroll wheel, or a trackpad pinch, zooms too). Weekends are shaded when days are wide enough to see, and today is marked.
-- **Skip weekends** (on by default, in *Settings*): durations and waits count Monday to Friday, and tasks start on a weekday. Turn it off to count calendar days.
+- **Count days** (in *Settings*, per project): **Every day** (the default) counts weekends too, which suits recovery plans, courses of treatment and anything else that doesn't stop for the weekend. **Weekdays only** counts Monday to Friday, starts tasks on a weekday and shades weekends on the chart. Each task's editor says which one its project uses.
+- **Reorder tasks** by dragging the handle at the left of a row, with a mouse or a finger, or focus the handle and use the up and down arrow keys.
 - **Critical path** highlights the tasks and links that would push the finish date back if they slipped. Every other task shows how many days it could slip.
 - **As many projects as you like**, from the picker in the header. Each has its own name, start date and weekend setting.
 - Installs on a phone (Chrome: *Install app*; iPhone: *Share → Add to Home Screen*) and opens offline.

@@ -139,7 +139,13 @@ textarea{resize:vertical}
 .names{border-right:1px solid var(--line);min-width:0}
 .names .hd{height:var(--head);display:flex;align-items:flex-end;padding:0 12px 8px;font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--line)}
 .names ol{list-style:none;margin:0;padding:0}
-.names li{height:var(--row);display:flex;align-items:center;gap:6px;padding:0 6px 0 8px;border-bottom:1px solid var(--line)}
+.names li{height:var(--row);display:flex;align-items:center;gap:4px;padding:0 6px 0 2px;border-bottom:1px solid var(--line);background:var(--surface);position:relative}
+.names li.lifted{z-index:5;box-shadow:0 4px 14px rgba(0,0,0,.18);border-radius:6px}
+.names.sorting li:not(.lifted){transition:transform .12s ease}
+.grip{flex:none;width:20px;height:32px;border:0;background:none;padding:0;display:grid;place-items:center;color:var(--faint);cursor:grab;touch-action:none}
+.grip:hover{color:var(--ink)}
+.grip:active{cursor:grabbing}
+.grip svg{width:10px;height:16px}
 .names li.sel{background:var(--accent-soft)}
 .tick{flex:none;width:22px;height:22px;border-radius:999px;border:2px solid var(--line);background:var(--surface);padding:0;display:grid;place-items:center}
 .tick svg{width:12px;height:12px;opacity:0}
@@ -301,7 +307,7 @@ const showDay = n => (asDate(n).getUTCFullYear() === asDate(today()).getUTCFullY
 
 /* ---------- Document ---------- */
 function blankProject(name) {
-  return { id: uid(), name: name || 'My project', start: ds(today()), workdays: true, u: now() };
+  return { id: uid(), name: name || 'My project', start: ds(today()), workdays: false, u: now() };
 }
 function blankDoc() {
   return { version: 1, settings: { zoom: 'day', critical: false, updatedAt: now() }, projects: [blankProject()], tasks: [], deleted: [] };
@@ -313,7 +319,7 @@ function upgrade(d) {
   if (!ZOOM[d.settings.zoom] && d.settings.zoom !== 'fit') d.settings.zoom = 'day';
   for (const k of ['projects', 'tasks', 'deleted']) if (!Array.isArray(d[k])) d[k] = [];
   if (!d.projects.length) d.projects = b.projects;
-  d.projects.forEach(p => { p.workdays ??= true; if (isNaN(dn(p.start))) p.start = ds(today()); });
+  d.projects.forEach(p => { p.workdays ??= false; if (isNaN(dn(p.start))) p.start = ds(today()); });
   d.tasks.forEach((t, i) => {
     t.order ??= i; t.duration = Math.max(0, Math.round(+t.duration || 0)); t.progress = clamp(Math.round(+t.progress || 0), 0, 100);
     t.deps = Array.isArray(t.deps) ? t.deps.filter(x => x && x.id) : [];
@@ -505,7 +511,7 @@ function renderGantt(p, tasks, plan) {
   G = { lo, ppd, x, tasks, plan, p, idx };
   const out = [];
   // Weekends, while days are wide enough to see
-  if (ppd >= 8) for (let n = lo; n < hi; n++) if (weekday(n) === 0 || weekday(n) === 6) out.push(`<rect x="${x(n)}" y="${HEAD}" width="${ppd}" height="${H - HEAD}" fill="var(--sunk)"/>`);
+  if (p.workdays && ppd >= 8) for (let n = lo; n < hi; n++) if (weekday(n) === 0 || weekday(n) === 6) out.push(`<rect x="${x(n)}" y="${HEAD}" width="${ppd}" height="${H - HEAD}" fill="var(--sunk)"/>`);
   // Header: the larger unit on top (months, years or decades), the scale's own unit below
   const top = [], bot = [];
   for (let n = lo; n < hi; n++) {
@@ -590,6 +596,7 @@ function renderGantt(p, tasks, plan) {
   if (!$('#chart')) g.innerHTML = '<div class="names" id="names"></div><div class="chart" id="chart"></div><div class="chart-foot" id="foot"></div>';
   const ch = $('#chart'), keep = ch.scrollLeft;
   $('#names').innerHTML = `<div class="hd">Task</div><ol>${tasks.map(t => `<li class="${sel === t.id ? 'sel' : ''}">
+      <button type="button" class="grip" data-grip="${esc(t.id)}" aria-label="Reorder ${esc(t.name || 'Untitled')}: drag, or use the up and down arrow keys"><svg viewBox="0 0 10 16" fill="currentColor"><circle cx="2.5" cy="3" r="1.5"/><circle cx="7.5" cy="3" r="1.5"/><circle cx="2.5" cy="8" r="1.5"/><circle cx="7.5" cy="8" r="1.5"/><circle cx="2.5" cy="13" r="1.5"/><circle cx="7.5" cy="13" r="1.5"/></svg></button>
       <button type="button" class="tick${t.duration === 0 ? ' ms' : ''}" data-tick="${esc(t.id)}" aria-pressed="${isDone(t)}" aria-label="${esc(t.name || 'Untitled')} done"><svg viewBox="0 0 12 12"><path d="M2 6.5l2.5 2.5L10 3" fill="none" stroke="var(--accent-ink)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       <button type="button" class="tname${isDone(t) ? ' done' : ''}" data-edit="${esc(t.id)}" title="${esc(t.name || 'Untitled')}">${esc(t.name || 'Untitled')}</button></li>`).join('')}</ol>`;
   ch.innerHTML = `<svg id="svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-label="Gantt chart">${defs}${out.join('')}<g>${links.join('')}</g>${bars.join('')}<g id="ghost"></g></svg>`;
@@ -623,7 +630,52 @@ function renderList(p, tasks, plan) {
    Pointer events are caught on the scroll box, which survives redraws, so a drag keeps going while the SVG is redrawn.
    body: moves the task's earliest start. end: changes its duration. link: drop on another task to make it wait. */
 let drag = null;
+/* Puts a task at position `to` in its project's list */
+function moveTask(id, to) {
+  const list = mine(), i = list.findIndex(x => x.id === id);
+  if (i < 0 || to < 0 || to >= list.length || to === i) return false;
+  list.splice(to, 0, ...list.splice(i, 1));
+  list.forEach((x, k) => { if (x.order !== k) { x.order = k; touch(x); } });
+  changed();
+  return true;
+}
+/* Row reordering from the grip: the row follows the pointer and the others slide out of its way; it lands on release */
+function wireGrips() {
+  const names = $('#names');
+  names.querySelectorAll('[data-grip]').forEach(g => {
+    g.onkeydown = e => {
+      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+      e.preventDefault();
+      const id = g.dataset.grip, i = mine().findIndex(x => x.id === id), to = i + (e.key === 'ArrowUp' ? -1 : 1);
+      if (moveTask(id, to)) {
+        $(`[data-grip="${CSS.escape(id)}"]`)?.focus();
+        $('#live').textContent = `${findTask(id).name || 'Task'} moved to position ${to + 1} of ${mine().length}`;
+      }
+    };
+    g.onpointerdown = e => {
+      if (e.button > 0) return;
+      e.preventDefault();
+      const rows = [...names.querySelectorAll('li')], li = g.closest('li'), i = rows.indexOf(li);
+      const R = { id: g.dataset.grip, i, to: i, y0: e.clientY, rows, li };
+      g.setPointerCapture(e.pointerId);
+      li.classList.add('lifted'); names.classList.add('sorting');
+      g.onpointermove = ev => {
+        const dy = clamp(ev.clientY - R.y0, -i * ROW, (rows.length - 1 - i) * ROW);
+        R.to = clamp(i + Math.round(dy / ROW), 0, rows.length - 1);
+        li.style.transform = `translateY(${dy}px)`;
+        rows.forEach((r, k) => { if (r !== li) r.style.transform = k > i && k <= R.to ? `translateY(${-ROW}px)` : k < i && k >= R.to ? `translateY(${ROW}px)` : ''; });
+      };
+      g.onpointerup = g.onpointercancel = ev => {
+        g.onpointermove = g.onpointerup = g.onpointercancel = null;
+        names.classList.remove('sorting');
+        rows.forEach(r => { r.style.transform = ''; r.classList.remove('lifted'); });
+        if (ev.type === 'pointerup' && !moveTask(R.id, R.to)) render();
+      };
+    };
+  });
+}
 function wireGantt() {
+  wireGrips();
   const g = $('#gantt'), ch = $('#chart');
   g.querySelectorAll('[data-tick]').forEach(b => b.onclick = () => {
     const t = findTask(b.dataset.tick);
@@ -762,6 +814,7 @@ function editTask(id, isNew) {
       <label class="field" id="tDurF"${t.duration === 0 ? ' hidden' : ''}>Duration (${unit})<input type="number" id="tDur" min="1" step="1" value="${Math.max(1, t.duration)}"></label>
     </div>
     <p class="note" id="tWhen"></p>
+    <p class="note">${p.workdays ? 'Durations and waits count weekdays only.' : 'Durations and waits count every day, weekends included.'} <button class="btn sm ghost" type="button" id="tCount">Change</button></p>
     <div class="field">Progress <span id="tPctL" class="mono">${t.progress}%</span>
       <input type="range" id="tPct" min="0" max="100" step="5" value="${t.progress}" aria-label="Progress"></div>
     <label class="cb"><input type="checkbox" id="tDone"${isDone(t) ? ' checked' : ''}> Done</label>
@@ -810,14 +863,9 @@ function editTask(id, isNew) {
       t.color = b.dataset.color;
       f.querySelectorAll('[data-color]').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
     }));
+    f.querySelector('#tCount').onclick = () => { closeDrawer(); settings(); };
     f.querySelector('#tNotes').oninput = e => upd(() => { t.notes = e.target.value; }, false);
-    const move = dir => {
-      const list = mine(), i = list.findIndex(x => x.id === t.id), j = i + dir;
-      if (j < 0 || j >= list.length) return;
-      [list[i], list[j]] = [list[j], list[i]];
-      list.forEach((x, k) => { if (x.order !== k) { x.order = k; touch(x); } });
-      changed();
-    };
+    const move = dir => moveTask(t.id, mine().findIndex(x => x.id === t.id) + dir);
     f.querySelector('#tUp').onclick = () => move(-1);
     f.querySelector('#tDown').onclick = () => move(1);
     wireDelete(f.querySelector('#tDel'), 'Tap again to delete', () => { removeTask(t.id); sel = null; changed(); toast('Task deleted'); });
@@ -832,7 +880,9 @@ function settings() {
     <label class="field">Name<input type="text" id="pName" value="${esc(p.name)}" autocomplete="off"></label>
     <label class="field">Starts<input type="date" id="pStart" value="${esc(p.start)}"></label>
     <span class="note">Tasks with no earlier start of their own, and nothing to wait for, begin on this day.</span>
-    <label class="cb"><input type="checkbox" id="pWork"${p.workdays ? ' checked' : ''}> Skip weekends (durations count Monday to Friday)</label>
+    <div class="field">Count days
+      <div class="seg" role="group" aria-label="Count days"><button type="button" data-work="0" aria-pressed="${!p.workdays}">Every day</button><button type="button" data-work="1" aria-pressed="${!!p.workdays}">Weekdays only</button></div>
+      <span class="note">Every day suits recovery plans, courses of treatment and anything else that doesn’t stop for the weekend. Weekdays only skips Saturdays and Sundays, for work projects.</span></div>
     <div class="row"><button class="btn" type="button" id="pNew">+ New project</button><button class="btn danger" type="button" id="pDel">Delete</button></div>
     <h3>Your data</h3>
     <p class="small">Everything is kept in this browser. A backup holds every project.</p>
@@ -842,7 +892,10 @@ function settings() {
     const upd = fn => { fn(); touch(p); changed(); };
     f.querySelector('#pName').oninput = e => upd(() => { p.name = e.target.value; });
     f.querySelector('#pStart').onchange = e => { if (!isNaN(dn(e.target.value))) upd(() => { p.start = e.target.value; }); };
-    f.querySelector('#pWork').onchange = e => upd(() => { p.workdays = e.target.checked; });
+    f.querySelectorAll('[data-work]').forEach(b => b.onclick = () => {
+      upd(() => { p.workdays = b.dataset.work === '1'; });
+      f.querySelectorAll('[data-work]').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+    });
     f.querySelector('#pNew').onclick = () => { closeDrawer(); newProject(); };
     wireDelete(f.querySelector('#pDel'), doc.projects.length > 1 ? 'Tap again to delete this project' : 'Tap again to clear this project', () => {
       for (const t of doc.tasks.filter(t => t.project === p.id)) removeTask(t.id);
