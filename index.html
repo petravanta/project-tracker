@@ -154,6 +154,12 @@ textarea{resize:vertical}
 .tick.ms{border-radius:4px;transform:rotate(45deg) scale(.82)}
 .tick.ms svg{transform:rotate(-45deg)}
 .tname{flex:1;min-width:0;text-align:left;background:none;border:0;padding:4px 2px;font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.names li.grp .tname{font-weight:700}
+.fold{flex:none;width:20px;height:24px;border:0;background:none;padding:0;display:grid;place-items:center;color:var(--muted);border-radius:4px}
+.fold:hover{color:var(--ink);background:var(--sunk)}
+.fold svg{width:12px;height:12px;transition:transform .12s}
+.fold[aria-expanded="false"] svg{transform:rotate(-90deg)}
+.trow.grp b{font-weight:700}
 .tname.done{color:var(--muted);text-decoration:line-through;text-decoration-color:var(--faint)}
 .chart{overflow-x:auto;overflow-y:hidden;position:relative;overscroll-behavior-x:contain}
 .chart svg{display:block;-webkit-user-select:none;user-select:none}
@@ -232,6 +238,7 @@ div.field > .note{font-size:13px;color:var(--muted)}
   <div class="toolbar">
     <button class="btn primary" id="addTask" type="button">+ Task</button>
     <button class="btn" id="addMilestone" type="button">+ Milestone</button>
+    <button class="btn" id="addGroup" type="button">+ Group</button>
     <span class="grow"></span>
     <div class="seg" role="group" aria-label="Zoom" id="zoom">
       <button type="button" id="zoomOut" aria-label="Zoom out">−</button>
@@ -324,7 +331,19 @@ function upgrade(d) {
     t.order ??= i; t.duration = Math.max(0, Math.round(+t.duration || 0)); t.progress = clamp(Math.round(+t.progress || 0), 0, 100);
     t.deps = Array.isArray(t.deps) ? t.deps.filter(x => x && x.id) : [];
     t.color = COLORS.includes(t.color) ? t.color : 'teal';
+    t.group = !!t.group; t.collapsed = !!t.collapsed; t.parent ??= null;
+    if (t.group) { t.deps = []; t.duration = 0; }
   });
+  // A task's parent must be a group in the same project, and following parents must never come back round
+  const byId = new Map(d.tasks.map(t => [t.id, t]));
+  for (const t of d.tasks) {
+    const q = byId.get(t.parent);
+    if (t.parent !== null && (!q || !q.group || q.project !== t.project)) t.parent = null;
+  }
+  for (const t of d.tasks) {
+    const seen = new Set([t.id]);
+    for (let a = byId.get(t.parent); a; a = byId.get(a.parent)) { if (seen.has(a.id)) { t.parent = null; break; } seen.add(a.id); }
+  }
   d.version = 1;
   return d;
 }
@@ -345,6 +364,9 @@ function save() {
 }
 function changed() { save(); render(); }
 function removeTask(id) {
+  const gone = findTask(id);
+  // Deleting a group keeps what was in it: its tasks move up a level
+  if (gone && gone.group) for (const t of doc.tasks) if (t.parent === id) { t.parent = gone.parent; touch(t); }
   doc.tasks = doc.tasks.filter(t => t.id !== id);
   doc.deleted.push(id);
   for (const t of doc.tasks) if (t.deps.some(x => x.id === id)) { t.deps = t.deps.filter(x => x.id !== id); touch(t); }
@@ -379,7 +401,27 @@ function calendar(p) {
   const count = (a, b) => { if (!W) return b - a; let c = 0; for (let n = a; n < b; n++) if (isWork(n)) c++; return c; };
   return { isWork, snap, add, sub, count };
 }
-function schedule(p, tasks) {
+/* Groups: a task with group: true holds the tasks whose parent is its id. Rows are shown depth first, siblings by
+   order; `rows` leaves out what's inside a collapsed group, `all` doesn't. Only leaves (tasks and milestones) are
+   scheduled, linked and counted; a group spans its leaves and rolls up their progress. */
+function treeOf(tasks) {
+  const kids = new Map([[null, []]]);
+  for (const t of tasks) kids.set(t.id, []);
+  for (const t of tasks) kids.get(kids.has(t.parent) ? t.parent : null).push(t);
+  const all = [], rows = [], depth = new Map();
+  const walk = (id, d, shown) => {
+    for (const t of kids.get(id)) {
+      depth.set(t.id, d); all.push(t);
+      if (shown) rows.push(t);
+      if (t.group) walk(t.id, d + 1, shown && !t.collapsed);
+    }
+  };
+  walk(null, 0, true);
+  return { kids, all, rows, depth, leaves: all.filter(t => !t.group) };
+}
+const inside = (id, groupId) => { for (let a = findTask(id)?.parent; a; a = findTask(a)?.parent) if (a === groupId) return true; return false; };
+function schedule(p, all) {
+  const T = treeOf(all), tasks = T.leaves;
   const C = calendar(p), by = new Map(tasks.map(t => [t.id, t])), S = new Map(), base = dn(p.start);
   const visiting = new Set();
   function fwd(t) {
@@ -415,8 +457,22 @@ function schedule(p, tasks) {
     return ls;
   }
   tasks.forEach(t => back(t));
-  for (const t of tasks) S.get(t.id).critical = S.get(t.id).slack === 0;
-  return { S, end, C };
+  for (const t of tasks) Object.assign(S.get(t.id), { critical: S.get(t.id).slack === 0, w: weight(t), done: weight(t) * t.progress / 100, progress: t.progress });
+  const span = g => {
+    if (S.has(g.id)) return S.get(g.id);
+    let es = Infinity, ef = -Infinity, w = 0, done = 0;
+    for (const c of T.kids.get(g.id)) {
+      const r = c.group ? span(c) : S.get(c.id);
+      if (r.es === null) continue;
+      es = Math.min(es, r.es); ef = Math.max(ef, r.ef); w += r.w; done += r.done;
+    }
+    const r = isFinite(es) ? { es, ef, w, done } : { es: null, ef: null, w: 0, done: 0 };
+    r.progress = w ? Math.round(done / w * 100) : 0;
+    S.set(g.id, r);
+    return r;
+  };
+  T.all.filter(t => t.group).forEach(span);
+  return { S, end, C, T };
 }
 /* Every task t waits for, directly or through others. Linking t to one of these would make a loop. */
 function waitsFor(t, tasks) {
@@ -425,14 +481,14 @@ function waitsFor(t, tasks) {
   return out;
 }
 function canLink(from, to, tasks) {   // may `to` wait for `from`?
-  return from.id !== to.id && !to.deps.some(d => d.id === from.id) && !waitsFor(from, tasks).has(to.id);
+  return !from.group && !to.group && from.id !== to.id && !to.deps.some(d => d.id === from.id) && !waitsFor(from, tasks).has(to.id);
 }
 
 /* ---------- Progress ---------- */
 const isDone = t => t.progress >= 100;
 const weight = t => Math.max(1, t.duration);
-function summary(tasks, plan) {
-  const t0 = today();
+function summary(plan) {
+  const t0 = today(), tasks = plan.T.leaves;
   const total = tasks.reduce((a, t) => a + weight(t), 0);
   const done = tasks.reduce((a, t) => a + weight(t) * t.progress / 100, 0);
   // Where the plan says the project should be today: the share of each task's working days already behind us
@@ -440,10 +496,11 @@ function summary(tasks, plan) {
   const late = tasks.filter(t => isLate(t, plan));
   return { pct: total ? Math.round(done / total * 100) : 0, due: total ? Math.round(due / total * 100) : 0, finished: tasks.filter(isDone).length, late };
 }
-const isLate = (t, plan) => !isDone(t) && plan.S.get(t.id).ef <= today() && (t.duration > 0 || plan.S.get(t.id).es < today());
+const isLate = (t, plan) => !t.group && !isDone(t) && plan.S.get(t.id).ef <= today() && (t.duration > 0 || plan.S.get(t.id).es < today());
 const lastDay = (t, r) => t.duration > 0 ? r.ef - 1 : r.es;
 function whenText(t, r) {
-  if (t.duration === 0) return showDay(r.es);
+  if (r.es === null) return 'Nothing in it yet';
+  if (t.duration === 0 && !t.group) return showDay(r.es);
   const a = r.es, b = r.ef - 1;
   return a === b ? showDay(a) : `${showDay(a)} – ${showDay(b)}`;
 }
@@ -463,7 +520,7 @@ function render() {
   $('#zoomOut').disabled = z === 'year';
   $('#critBtn').setAttribute('aria-pressed', String(!!doc.settings.critical));
   if (!tasks.length) return;
-  renderStats(p, tasks, plan);
+  renderStats(p, plan);
   renderGantt(p, tasks, plan);
   renderList(p, tasks, plan);
 }
@@ -471,24 +528,24 @@ function renderPicker() {
   const s = $('#projPick');
   s.innerHTML = doc.projects.slice().sort((a, b) => a.name.localeCompare(b.name)).map(p => `<option value="${esc(p.id)}"${p.id === cur().id ? ' selected' : ''}>${esc(p.name || 'Untitled project')}</option>`).join('') + '<option value="+">+ New project</option>';
 }
-function renderStats(p, tasks, plan) {
-  const s = summary(tasks, plan);
+function renderStats(p, plan) {
+  const tasks = plan.T.leaves, s = summary(plan);
   const behind = s.due - s.pct;
   $('#stats').innerHTML = `
     <div class="stats">
       <div class="stat"><b>${s.pct}%</b><span>Complete</span></div>
       <div class="stat"><b>${s.finished}<small class="muted"> / ${tasks.length}</small></b><span>Tasks done</span></div>
       <div class="stat"><b class="${s.late.length ? 'late' : ''}">${s.late.length}</b><span>Overdue</span></div>
-      <div class="stat"><b>${esc(showDay(Math.max(...tasks.map(t => lastDay(t, plan.S.get(t.id))))))}</b><span>Finishes</span></div>
+      <div class="stat"><b>${tasks.length ? esc(showDay(Math.max(...tasks.map(t => lastDay(t, plan.S.get(t.id)))))) : '–'}</b><span>Finishes</span></div>
     </div>
     <div class="meter" style="margin-top:14px" role="img" aria-label="${s.pct}% complete; the plan expects ${s.due}% by today"><i style="width:${s.pct}%"></i></div>
     <p class="ctx-note">${s.pct >= 100 ? 'Everything is done.' : behind > 2 ? `The plan expects ${s.due}% by today, so this is <b>${behind} points behind</b>.` : behind < -2 ? `The plan expects ${s.due}% by today, so this is ${-behind} points ahead.` : `On track: the plan expects ${s.due}% by today.`}${s.late.length ? ` Overdue: ${s.late.map(t => esc(t.name || 'Untitled')).join(', ')}.` : ''}</p>`;
 }
 
 let G = null;   // what the chart was drawn with, for pointer handling
-function renderGantt(p, tasks, plan) {
-  const t0 = today(), crit = doc.settings.critical, fit = doc.settings.zoom === 'fit';
-  const starts = tasks.map(t => plan.S.get(t.id).es), ends = tasks.map(t => plan.S.get(t.id).ef);
+function renderGantt(p, all, plan) {
+  const t0 = today(), crit = doc.settings.critical, fit = doc.settings.zoom === 'fit', tasks = plan.T.rows, depth = plan.T.depth;
+  const starts = plan.T.leaves.map(t => plan.S.get(t.id).es), ends = plan.T.leaves.map(t => plan.S.get(t.id).ef);
   const chartW = Math.max(120, $('#gantt').clientWidth - ($('#names')?.offsetWidth || 180));
   let lo, hi, ppd;
   if (fit) {
@@ -541,16 +598,22 @@ function renderGantt(p, tasks, plan) {
   // Today
   const tx = x(t0) + (ppd >= 22 ? ppd / 2 : 0);
   out.push(`<line x1="${tx}" x2="${tx}" y1="${HEAD - 18}" y2="${H}" stroke="var(--accent)" stroke-width="2"/><rect x="${tx - 22}" y="${HEAD - 35}" width="44" height="15" rx="7.5" fill="var(--accent)"/><text x="${tx}" y="${HEAD - 24}" font-size="10" font-weight="700" text-anchor="middle" fill="var(--accent-ink)">TODAY</text>`);
-  // Links: from the end of a task to the start of the one waiting for it
-  const outAt = new Map(), inAt = new Map();
-  tasks.forEach((t, i) => {
-    const r = plan.S.get(t.id), cy = rowY(i) + ROW / 2;
-    if (t.duration === 0) { outAt.set(t.id, [x(r.es) + 9, cy]); inAt.set(t.id, [x(r.es) - 9, cy]); }
-    else { outAt.set(t.id, [x(r.ef), cy]); inAt.set(t.id, [x(r.es), cy]); }
+  // Links: from the end of a task to the start of the one waiting for it.
+  // A task hidden in a folded group links from (or to) that group's row, at its own dates.
+  const outAt = new Map(), inAt = new Map(), seen = new Set();
+  const rowOf = id => { let q = findTask(id); while (q && !idx.has(q.id)) q = findTask(q.parent); return q ? idx.get(q.id) : null; };
+  plan.T.leaves.forEach(t => {
+    const r = plan.S.get(t.id), i = rowOf(t.id), cy = rowY(i) + ROW / 2;
+    if (i === null) return;
+    if (t.duration === 0) { outAt.set(t.id, [x(r.es) + 9, cy, i]); inAt.set(t.id, [x(r.es) - 9, cy, i]); }
+    else { outAt.set(t.id, [x(r.ef), cy, i]); inAt.set(t.id, [x(r.es), cy, i]); }
   });
   const links = [];
-  for (const t of tasks) for (const d of t.deps) {
-    if (!idx.has(d.id)) continue;
+  for (const t of plan.T.leaves) for (const d of t.deps) {
+    if (!outAt.has(d.id) || !inAt.has(t.id) || outAt.get(d.id)[2] === inAt.get(t.id)[2]) continue;
+    const at = outAt.get(d.id).join() + '>' + inAt.get(t.id).join();
+    if (seen.has(at)) continue;
+    seen.add(at);
     const [x1, y1] = outAt.get(d.id), [x2, y2] = inAt.get(t.id);
     const down = y2 > y1 ? 1 : -1;
     const path = x2 - x1 >= 14
@@ -564,7 +627,19 @@ function renderGantt(p, tasks, plan) {
   const bars = tasks.map((t, i) => {
     const r = plan.S.get(t.id), y = rowY(i) + (ROW - BAR) / 2, cy = rowY(i) + ROW / 2, col = `var(--c-${t.color})`;
     const late = isLate(t, plan), isSel = sel === t.id, isCrit = crit && r.critical;
-    const label = `${esc(t.name || 'Untitled')}: ${esc(whenText(t, r))}, ${t.progress}% done${late ? ', overdue' : ''}`;
+    const label = `${esc(t.name || 'Untitled')}: ${esc(whenText(t, r))}, ${r.progress}% done${late ? ', overdue' : ''}`;
+    if (t.group) {
+      // A group is a slim bar over its tasks' dates with a notch down at each end, filled to its rolled-up progress
+      if (r.es === null) return '';
+      const bx = x(r.es), bw = Math.max(6, x(r.ef) - x(r.es)), pw = bw * r.progress / 100, gy = cy - 6, h = 8;
+      return `<g class="bar grp${isSel ? ' sel' : ''}" data-id="${esc(t.id)}" role="img" aria-label="Group ${label}">
+        <rect x="${bx}" y="${gy}" width="${bw}" height="${h}" fill="${col}" fill-opacity=".25" data-part="group"/>
+        ${pw > 0 ? `<rect x="${bx}" y="${gy}" width="${pw}" height="${h}" fill="${col}" data-part="group"/>` : ''}
+        <path d="M${bx} ${gy}h${bw}v${h + 6}l-6 -6H${bx + 6}l-6 6z" fill="none" stroke="${col}" stroke-width="1.5" stroke-linejoin="round" data-part="group"/>
+        ${isSel ? `<rect x="${bx - 4}" y="${gy - 4}" width="${bw + 8}" height="${h + 14}" rx="5" fill="none" stroke="var(--ink)" stroke-width="1.5"/>` : ''}
+        <text x="${bx + bw + 10}" y="${cy + 4}" font-size="12" font-weight="700" fill="var(--muted)">${r.progress}%</text>
+      </g>`;
+    }
     if (t.duration === 0) {
       const mx = x(r.es), s = 9;
       return `<g class="bar${isSel ? ' sel' : ''}" data-id="${esc(t.id)}" role="img" aria-label="${label}">
@@ -595,10 +670,11 @@ function renderGantt(p, tasks, plan) {
   // The scroll box stays put between redraws so a drag that started on it keeps its pointer
   if (!$('#chart')) g.innerHTML = '<div class="names" id="names"></div><div class="chart" id="chart"></div><div class="chart-foot" id="foot"></div>';
   const ch = $('#chart'), keep = ch.scrollLeft;
-  $('#names').innerHTML = `<div class="hd">Task</div><ol>${tasks.map(t => `<li class="${sel === t.id ? 'sel' : ''}">
-      <button type="button" class="grip" data-grip="${esc(t.id)}" aria-label="Reorder ${esc(t.name || 'Untitled')}: drag, or use the up and down arrow keys"><svg viewBox="0 0 10 16" fill="currentColor"><circle cx="2.5" cy="3" r="1.5"/><circle cx="7.5" cy="3" r="1.5"/><circle cx="2.5" cy="8" r="1.5"/><circle cx="7.5" cy="8" r="1.5"/><circle cx="2.5" cy="13" r="1.5"/><circle cx="7.5" cy="13" r="1.5"/></svg></button>
-      <button type="button" class="tick${t.duration === 0 ? ' ms' : ''}" data-tick="${esc(t.id)}" aria-pressed="${isDone(t)}" aria-label="${esc(t.name || 'Untitled')} done"><svg viewBox="0 0 12 12"><path d="M2 6.5l2.5 2.5L10 3" fill="none" stroke="var(--accent-ink)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-      <button type="button" class="tname${isDone(t) ? ' done' : ''}" data-edit="${esc(t.id)}" title="${esc(t.name || 'Untitled')}">${esc(t.name || 'Untitled')}</button></li>`).join('')}</ol>`;
+  const fold = t => t.group ? `<button type="button" class="fold" data-fold="${esc(t.id)}" aria-expanded="${!t.collapsed}" aria-label="${t.collapsed ? 'Show' : 'Hide'} what’s in ${esc(t.name || 'this group')}"><svg viewBox="0 0 12 12"><path d="M2.5 4.5L6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>` : '';
+  $('#names').innerHTML = `<div class="hd">Task</div><ol>${tasks.map(t => `<li class="${sel === t.id ? 'sel' : ''}${t.group ? ' grp' : ''}" style="padding-left:${2 + depth.get(t.id) * 14}px">
+      <button type="button" class="grip" data-grip="${esc(t.id)}" aria-label="Reorder ${esc(t.name || 'Untitled')}: drag, or use the arrow keys (left and right move it out of or into a group)"><svg viewBox="0 0 10 16" fill="currentColor"><circle cx="2.5" cy="3" r="1.5"/><circle cx="7.5" cy="3" r="1.5"/><circle cx="2.5" cy="8" r="1.5"/><circle cx="7.5" cy="8" r="1.5"/><circle cx="2.5" cy="13" r="1.5"/><circle cx="7.5" cy="13" r="1.5"/></svg></button>
+      ${fold(t)}<button type="button" class="tick${t.duration === 0 && !t.group ? ' ms' : ''}" data-tick="${esc(t.id)}" aria-pressed="${plan.S.get(t.id).progress >= 100 && plan.S.get(t.id).w > 0}" aria-label="${esc(t.name || 'Untitled')} done"><svg viewBox="0 0 12 12"><path d="M2 6.5l2.5 2.5L10 3" fill="none" stroke="var(--accent-ink)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      <button type="button" class="tname${plan.S.get(t.id).progress >= 100 && plan.S.get(t.id).w > 0 ? ' done' : ''}" data-edit="${esc(t.id)}" title="${esc(t.name || 'Untitled')}">${esc(t.name || 'Untitled')}</button></li>`).join('')}</ol>`;
   ch.innerHTML = `<svg id="svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-label="Gantt chart">${defs}${out.join('')}<g>${links.join('')}</g>${bars.join('')}<g id="ghost"></g></svg>`;
   $('#foot').innerHTML = `
       <span class="key"><i style="background:var(--c-teal)"></i>Done part</span>
@@ -612,11 +688,20 @@ function renderGantt(p, tasks, plan) {
 }
 let resetScroll = true, zoomAnchor = null;
 
-function renderList(p, tasks, plan) {
-  $('#list').innerHTML = `<h3>Tasks</h3><div>${tasks.map(t => {
-    const r = plan.S.get(t.id), late = isLate(t, plan);
+function renderList(p, all, plan) {
+  $('#list').innerHTML = `<h3>Tasks</h3><div>${plan.T.all.map(t => {
+    const r = plan.S.get(t.id), late = isLate(t, plan), indent = plan.T.depth.get(t.id) * 18;
+    if (t.group) {
+      const n = plan.T.kids.get(t.id).length;
+      return `<div class="trow grp" style="padding-left:${indent}px">
+      <div><b><span class="dot" style="--sw:var(--c-${t.color})"></span>${esc(t.name || 'Untitled group')}</b>
+        <span class="meta">${esc(whenText(t, r))}${n ? ` · ${n} item${n === 1 ? '' : 's'}` : ''}</span>
+        ${t.notes ? `<span class="meta" style="display:block">${esc(t.notes)}</span>` : ''}</div>
+      <div class="pct"><span>${r.progress}%</span><div class="meter"><i style="width:${r.progress}%"></i></div><button class="btn sm" type="button" data-edit="${esc(t.id)}">Edit</button></div>
+    </div>`;
+    }
     const waits = t.deps.map(d => findTask(d.id)).filter(Boolean).map(q => esc(q.name || 'Untitled'));
-    return `<div class="trow">
+    return `<div class="trow" style="padding-left:${indent}px">
       <div><b><span class="dot" style="--sw:var(--c-${t.color})"></span>${esc(t.name || 'Untitled')}</b>
         <span class="meta">${esc(whenText(t, r))} · ${esc(durText(t, p))}${waits.length ? ` · after ${waits.join(', ')}` : ''}${r.slack && !isDone(t) ? ` · ${r.slack} day${r.slack === 1 ? '' : 's'} to spare` : ''}${late ? ' · <span class="late">overdue</span>' : ''}</span>
         ${t.notes ? `<span class="meta" style="display:block">${esc(t.notes)}</span>` : ''}</div>
@@ -630,55 +715,109 @@ function renderList(p, tasks, plan) {
    Pointer events are caught on the scroll box, which survives redraws, so a drag keeps going while the SVG is redrawn.
    body: moves the task's earliest start. end: changes its duration. link: drop on another task to make it wait. */
 let drag = null;
-/* Puts a task at position `to` in its project's list */
-function moveTask(id, to) {
-  const list = mine(), i = list.findIndex(x => x.id === id);
-  if (i < 0 || to < 0 || to >= list.length || to === i) return false;
-  list.splice(to, 0, ...list.splice(i, 1));
-  list.forEach((x, k) => { if (x.order !== k) { x.order = k; touch(x); } });
+/* Puts a task (and, for a group, everything in it) inside `parent` (null for the top level) at position `index`
+   among that parent's items. `order` only ever has to be right among siblings. */
+function placeTask(id, parent, index) {
+  const t = findTask(id), T = treeOf(mine());
+  if (!t || parent === id || (parent && inside(parent, id))) return false;
+  const was = T.kids.get(t.parent ?? null) || [], sibs = (T.kids.get(parent) || []).filter(x => x.id !== id);
+  index = clamp(index, 0, sibs.length);
+  if ((t.parent ?? null) === parent && was.indexOf(t) === index) return false;
+  sibs.splice(index, 0, t);
+  if ((t.parent ?? null) !== parent) { t.parent = parent; touch(t); }
+  sibs.forEach((x, k) => { if (x.order !== k) { x.order = k; touch(x); } });
   changed();
   return true;
+}
+/* Up or down one place among the task's siblings */
+function moveTask(id, dir) {
+  const t = findTask(id), sibs = treeOf(mine()).kids.get(t.parent ?? null);
+  return placeTask(id, t.parent ?? null, sibs.indexOf(t) + dir);
+}
+/* Into the group just above it (as its last item), or out of its group (to just after it) */
+function nestTask(id, dir) {
+  const t = findTask(id), T = treeOf(mine()), sibs = T.kids.get(t.parent ?? null), i = sibs.indexOf(t);
+  if (dir > 0) {
+    const g = sibs[i - 1];
+    if (!g || !g.group) return false;
+    if (g.collapsed) { g.collapsed = false; touch(g); }
+    return placeTask(id, g.id, T.kids.get(g.id).length);
+  }
+  const g = findTask(t.parent);
+  if (!g) return false;
+  return placeTask(id, g.parent ?? null, T.kids.get(g.parent ?? null).indexOf(g) + 1);
 }
 /* Row reordering from the grip: the row follows the pointer and the others slide out of its way; it lands on release */
 function wireGrips() {
   const names = $('#names');
   names.querySelectorAll('[data-grip]').forEach(g => {
     g.onkeydown = e => {
-      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+      const k = { ArrowUp: () => moveTask(id, -1), ArrowDown: () => moveTask(id, 1), ArrowRight: () => nestTask(id, 1), ArrowLeft: () => nestTask(id, -1) }[e.key];
+      const id = g.dataset.grip;
+      if (!k) return;
       e.preventDefault();
-      const id = g.dataset.grip, i = mine().findIndex(x => x.id === id), to = i + (e.key === 'ArrowUp' ? -1 : 1);
-      if (moveTask(id, to)) {
+      if (k()) {
         $(`[data-grip="${CSS.escape(id)}"]`)?.focus();
-        $('#live').textContent = `${findTask(id).name || 'Task'} moved to position ${to + 1} of ${mine().length}`;
+        const t = findTask(id), T = treeOf(mine()), sibs = T.kids.get(t.parent ?? null), grp = findTask(t.parent);
+        $('#live').textContent = `${t.name || 'Task'}: ${sibs.indexOf(t) + 1} of ${sibs.length} in ${grp ? grp.name || 'the group' : 'the top level'}`;
       }
     };
     g.onpointerdown = e => {
       if (e.button > 0) return;
       e.preventDefault();
       const rows = [...names.querySelectorAll('li')], li = g.closest('li'), i = rows.indexOf(li);
-      const R = { id: g.dataset.grip, i, to: i, y0: e.clientY, rows, li };
+      const R = { id: g.dataset.grip, i, to: i, y0: e.clientY, x0: e.clientX, dx: 0, rows, li };
       g.setPointerCapture(e.pointerId);
       li.classList.add('lifted'); names.classList.add('sorting');
       g.onpointermove = ev => {
         const dy = clamp(ev.clientY - R.y0, -i * ROW, (rows.length - 1 - i) * ROW);
         R.to = clamp(i + Math.round(dy / ROW), 0, rows.length - 1);
-        li.style.transform = `translateY(${dy}px)`;
+        R.dx = ev.clientX - R.x0;
+        li.style.transform = `translate(${clamp(R.dx, -48, 0)}px,${dy}px)`;
         rows.forEach((r, k) => { if (r !== li) r.style.transform = k > i && k <= R.to ? `translateY(${-ROW}px)` : k < i && k >= R.to ? `translateY(${ROW}px)` : ''; });
       };
       g.onpointerup = g.onpointercancel = ev => {
         g.onpointermove = g.onpointerup = g.onpointercancel = null;
         names.classList.remove('sorting');
         rows.forEach(r => { r.style.transform = ''; r.classList.remove('lifted'); });
-        if (ev.type === 'pointerup' && !moveTask(R.id, R.to)) render();
+        if (ev.type === 'pointerup' && !dropRow(R)) render();
       };
     };
   });
 }
+/* Where a dragged row lands. It goes after the row it was dropped below: into that row if it's an open group,
+   otherwise next to it. Dragging left as well takes it out one level per 30px. */
+function dropRow(R) {
+  const vis = G.tasks, i = R.i, id = R.id;
+  if (R.to === i && R.dx > -30) return false;
+  let above = R.to > i ? vis[R.to] : R.to === i ? vis[i - 1] : vis[R.to - 1];
+  if (above && (above.id === id || inside(above.id, id))) return false;
+  let out = R.dx < -30 ? Math.min(3, Math.floor(-R.dx / 30)) : 0, parent, anchor;
+  if (!above) { parent = null; anchor = null; }
+  else if (above.group && !above.collapsed && !out) { parent = above.id; anchor = null; }
+  else {
+    anchor = above; parent = above.parent ?? null;
+    if (above.group && !above.collapsed) out--;
+    while (out-- > 0 && parent) { anchor = findTask(parent); parent = anchor.parent ?? null; }
+  }
+  const sibs = (treeOf(mine()).kids.get(parent) || []).filter(x => x.id !== id);
+  return placeTask(id, parent, anchor ? sibs.indexOf(anchor) + 1 : 0);
+}
 function wireGantt() {
   wireGrips();
+  $('#names').querySelectorAll('[data-fold]').forEach(b => b.onclick = () => {
+    const g = findTask(b.dataset.fold);
+    g.collapsed = !g.collapsed; touch(g); changed();
+  });
   const g = $('#gantt'), ch = $('#chart');
   g.querySelectorAll('[data-tick]').forEach(b => b.onclick = () => {
     const t = findTask(b.dataset.tick);
+    if (t.group) {
+      const leaves = treeOf(mine()).leaves.filter(x => inside(x.id, t.id)), to = leaves.every(isDone) ? 0 : 100;
+      leaves.forEach(x => { if (x.progress !== to) { x.progress = to; touch(x); } });
+      changed();
+      return $('#live').textContent = `Everything in ${t.name || 'the group'} ${to ? 'done' : 'not done'}`;
+    }
     t.progress = isDone(t) ? 0 : 100; touch(t); changed();
     $('#live').textContent = `${t.name || 'Task'} ${isDone(t) ? 'done' : 'not done'}`;
   });
@@ -704,7 +843,7 @@ function onDown(e) {
 function onMove(e) {
   if (!drag) return;
   const dx = e.clientX - drag.x0;
-  if (!drag.moved && Math.abs(dx) < 4 && drag.part !== 'link') return;
+  if (drag.part === 'group' || (!drag.moved && Math.abs(dx) < 4 && drag.part !== 'link')) return;
   drag.moved = true;
   const t = findTask(drag.id), C = calendar(G.p);
   if (drag.part === 'link') return drawGhost(e);
@@ -727,9 +866,10 @@ function onUp(e) {
     const el = document.elementFromPoint(e.clientX, e.clientY), bar = el && el.closest('.bar');
     const to = bar && findTask(bar.dataset.id);
     if (!to || to.id === t.id) { if (!d.moved || !to) toast('Drag the dot onto the task that should wait for this one.'); return; }
+    if (to.group) return toast('Groups can’t wait for anything. Link the tasks inside the group instead.', 4000);
     return addLink(t, to);
   }
-  if (!d.moved) { sel = t.id; selDep = null; return editTask(t.id); }
+  if (!d.moved || d.part === 'group') { sel = t.id; selDep = null; return editTask(t.id); }
   touch(t);
   const r = schedule(G.p, mine()).S.get(t.id);
   if (d.part === 'body' && r.es > dn(t.start)) toast(`It can’t start before ${showDay(r.es)}: it waits for ${findTask(r.driver)?.name || 'another task'}.`, 4000);
@@ -782,23 +922,66 @@ function wireDelete(btn, label, onDelete) {
   };
 }
 
-function newTask(milestone) {
+function newTask(milestone, group) {
   const p = cur(), tasks = mine();
   const last = tasks[tasks.length - 1];
   const t = {
-    id: uid(), project: p.id, name: '', start: ds(Math.max(dn(p.start), today())), duration: milestone ? 0 : 5, progress: 0,
-    deps: [], color: last ? last.color : 'teal', notes: '', order: tasks.length ? Math.max(...tasks.map(x => x.order)) + 1 : 0, u: now()
+    id: uid(), project: p.id, name: '', start: ds(Math.max(dn(p.start), today())), duration: milestone || group ? 0 : 5, progress: 0,
+    deps: [], color: last ? last.color : 'teal', notes: '', order: tasks.length ? Math.max(...tasks.map(x => x.order)) + 1 : 0,
+    parent: null, group: !!group, collapsed: false, u: now()
   };
   // A new task waits for nothing; links are only ever added by the person
   doc.tasks.push(t);
   changed();
   editTask(t.id, true);
 }
+/* The "In group" picker: every group but this one and the groups inside it */
+function groupPicker(t) {
+  const T = treeOf(mine()), opts = T.all.filter(g => g.group && g.id !== t.id && !inside(g.id, t.id));
+  return `<label class="field">In group<select id="tGroup"><option value="">None (top level)</option>${opts.map(g => `<option value="${esc(g.id)}"${g.id === t.parent ? ' selected' : ''}>${'\u2003'.repeat(T.depth.get(g.id))}${esc(g.name || 'Untitled group')}</option>`).join('')}</select></label>`;
+}
+function wireGroupPicker(f, t) {
+  f.querySelector('#tGroup').onchange = e => {
+    const to = e.target.value || null;
+    placeTask(t.id, to, (treeOf(mine()).kids.get(to) || []).length);
+  };
+}
+function editGroup(t, isNew) {
+  const plan = schedule(cur(), mine()), r = plan.S.get(t.id), n = plan.T.kids.get(t.id).length;
+  openDrawer(isNew ? 'New group' : (t.name || 'Group'), `
+    <label class="field">Name<input type="text" id="tName" value="${esc(t.name)}" placeholder="Week one" autocomplete="off"></label>
+    <p class="note">${n ? `${n} item${n === 1 ? '' : 's'} · ${esc(whenText(t, r))} · ${r.progress}% done.` : 'Nothing in it yet.'} Drag a task’s handle just below the group to put it in, or pick the group in the task’s editor.</p>
+    ${groupPicker(t)}
+    <div class="field">Color<div class="swatches" role="group" aria-label="Color">${COLORS.map(c => `<button type="button" class="swatch" style="--sw:var(--c-${c})" data-color="${c}" aria-label="${COLOR_NAMES[c]}" aria-pressed="${c === t.color}"></button>`).join('')}</div></div>
+    <label class="field">Notes<textarea id="tNotes" rows="3">${esc(t.notes || '')}</textarea></label>
+    <div class="row">
+      <button class="btn primary" type="button" data-close>Done</button>
+      <button class="btn" type="button" id="tUp">Move up</button>
+      <button class="btn" type="button" id="tDown">Move down</button>
+      <span class="grow" style="flex:1"></span>
+      <button class="btn danger" type="button" id="tDel">Delete</button>
+    </div>`, f => {
+    const upd = (fn, redraw = true) => { fn(); touch(t); save(); if (redraw) render(); };
+    f.querySelector('#tName').oninput = e => upd(() => { t.name = e.target.value; });
+    f.querySelector('#tName').onkeydown = e => { if (e.key === 'Enter') closeDrawer(); };
+    f.querySelectorAll('[data-color]').forEach(b => b.onclick = () => upd(() => {
+      t.color = b.dataset.color;
+      f.querySelectorAll('[data-color]').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+    }));
+    f.querySelector('#tNotes').oninput = e => upd(() => { t.notes = e.target.value; }, false);
+    wireGroupPicker(f, t);
+    f.querySelector('#tUp').onclick = () => moveTask(t.id, -1);
+    f.querySelector('#tDown').onclick = () => moveTask(t.id, 1);
+    wireDelete(f.querySelector('#tDel'), n ? 'Tap again: its items stay' : 'Tap again to delete', () => { removeTask(t.id); sel = null; changed(); toast('Group deleted'); });
+    if (isNew) f.querySelector('#tName').focus();
+  });
+}
 function editTask(id, isNew) {
   const t = findTask(id);
   if (!t) return;
   sel = id; selDep = null; render();
-  const p = cur(), tasks = mine();
+  if (t.group) return editGroup(t, isNew);
+  const p = cur(), tasks = treeOf(mine()).leaves;
   const blocked = new Set([...tasks.filter(q => waitsFor(q, tasks).has(t.id)).map(q => q.id)]);   // these wait for t, so t can't wait for them
   const others = tasks.filter(q => q.id !== t.id && !blocked.has(q.id));
   const unit = p.workdays ? 'work days' : 'days';
@@ -820,6 +1003,7 @@ function editTask(id, isNew) {
         <span class="lag"${d ? '' : ' hidden'}>+<input type="number" min="0" step="1" value="${d ? d.lag || 0 : 0}" data-lag-id="${esc(q.id)}" aria-label="Days to wait after ${esc(q.name || 'it')} finishes"> d</span></div>`; }).join('')}</div>
       <span class="note">It starts once every task ticked here has finished, plus the days after the +. Tasks that already wait for this one aren’t listed.</span>` : '<span class="note">Add more tasks to link this one to them.</span>'}
     </div>
+    ${groupPicker(t)}
     <div class="field">Color<div class="swatches" role="group" aria-label="Color">${COLORS.map(c => `<button type="button" class="swatch" style="--sw:var(--c-${c})" data-color="${c}" aria-label="${COLOR_NAMES[c]}" aria-pressed="${c === t.color}"></button>`).join('')}</div></div>
     <label class="field">Notes<textarea id="tNotes" rows="3">${esc(t.notes || '')}</textarea></label>
     <div class="row">
@@ -829,6 +1013,7 @@ function editTask(id, isNew) {
       <span class="grow" style="flex:1"></span>
       <button class="btn danger" type="button" id="tDel">Delete</button>
     </div>`, f => {
+    wireGroupPicker(f, t);
     const upd = (fn, redraw = true) => { fn(); touch(t); save(); if (redraw) render(); when(); };
     const when = () => {
       const pl = schedule(cur(), mine()), rr = pl.S.get(t.id);
@@ -861,9 +1046,8 @@ function editTask(id, isNew) {
     }));
     f.querySelector('#tCount').onclick = () => { closeDrawer(); settings(); };
     f.querySelector('#tNotes').oninput = e => upd(() => { t.notes = e.target.value; }, false);
-    const move = dir => moveTask(t.id, mine().findIndex(x => x.id === t.id) + dir);
-    f.querySelector('#tUp').onclick = () => move(-1);
-    f.querySelector('#tDown').onclick = () => move(1);
+    f.querySelector('#tUp').onclick = () => moveTask(t.id, -1);
+    f.querySelector('#tDown').onclick = () => moveTask(t.id, 1);
     wireDelete(f.querySelector('#tDel'), 'Tap again to delete', () => { removeTask(t.id); sel = null; changed(); toast('Task deleted'); });
     if (isNew) f.querySelector('#tName').focus();
   });
@@ -1056,6 +1240,7 @@ function toast(msg, ms = 2600) {
 $('#addTask').onclick = () => newTask(false);
 $('#emptyAdd').onclick = () => newTask(false);
 $('#addMilestone').onclick = () => newTask(true);
+$('#addGroup').onclick = () => newTask(false, true);
 $('#settingsBtn').onclick = settings;
 $('#critBtn').onclick = () => { doc.settings.critical = !doc.settings.critical; touchSettings(); changed(); };
 function setZoom(z) {
