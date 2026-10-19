@@ -17,6 +17,7 @@ Plan a project as a Gantt chart: tasks with durations and dates, links for what 
 - **Skip weekends** (on by default, in *Settings*): durations and waits count Monday to Friday, and tasks start on a weekday. Turn it off to count calendar days.
 - **Critical path** highlights the tasks and links that would push the finish date back if they slipped. Every other task shows how many days it could slip.
 - **As many projects as you like**, from the picker in the header. Each has its own name, start date and weekend setting.
+- Installs on a phone (Chrome: *Install app*; iPhone: *Share → Add to Home Screen*) and opens offline.
 - Light and dark themes, the shared **All apps** link and theme switch, and a phone-first layout, as the [shared standards](https://github.com/petravanta/general/blob/main/STANDARDS.md) describe.
 
 It is deliberately simple and single-user: no resources, no costs, no sharing.
