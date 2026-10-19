@@ -6,7 +6,7 @@ Plan a project as a Gantt chart: tasks with durations and dates, links for what 
 
 **[Open Project Tracker → petravanta.github.io/project-tracker](https://petravanta.github.io/project-tracker/)**
 
-1. **+ Task** adds a task with a name, an earliest start and a duration. **+ Milestone** adds a single day with no duration, like a launch or a deadline. A new task waits for the task that currently finishes last, which you can untick.
+1. **+ Task** adds a task with a name, an earliest start and a duration. **+ Milestone** adds a single day with no duration, like a launch or a deadline. A new task starts out on its own, linked to nothing, from today (or the project's start if that's later).
 2. **Link tasks.** Drag the dot at the end of a bar onto the task that has to wait for it, or tick *Waits for* in the task's editor (with an optional number of days to wait after it). A task that waits for others starts once they have all finished, so moving or lengthening one task moves everything after it.
 3. **Place and size them.** Drag a bar to move it to another day, or drag its right end to change how long it takes. A task can't be dragged earlier than the tasks it waits for allow.
 4. **Track completion.** Tick the circle next to a task to mark it done, or set its progress in steps of 5%. The bar fills to match, and the summary shows how much of the whole project is done (weighted by duration), how that compares with where the plan says you should be today, and which tasks are overdue.

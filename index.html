@@ -783,17 +783,13 @@ function wireDelete(btn, label, onDelete) {
 }
 
 function newTask(milestone) {
-  const p = cur(), tasks = mine(), plan = schedule(p, tasks);
+  const p = cur(), tasks = mine();
   const last = tasks[tasks.length - 1];
   const t = {
     id: uid(), project: p.id, name: '', start: ds(Math.max(dn(p.start), today())), duration: milestone ? 0 : 5, progress: 0,
     deps: [], color: last ? last.color : 'teal', notes: '', order: tasks.length ? Math.max(...tasks.map(x => x.order)) + 1 : 0, u: now()
   };
-  // A new task follows the one that ends last, which is the usual next step when planning from the top down
-  if (tasks.length) {
-    const lastEnd = tasks.reduce((a, x) => plan.S.get(x.id).ef > plan.S.get(a.id).ef ? x : a, tasks[0]);
-    t.deps.push({ id: lastEnd.id, lag: 0 });
-  }
+  // A new task waits for nothing; links are only ever added by the person
   doc.tasks.push(t);
   changed();
   editTask(t.id, true);
