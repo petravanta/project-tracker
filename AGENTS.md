@@ -1,0 +1,12 @@
+# Notes for coding agents
+
+Follow the shared standards in https://github.com/petravanta/general/blob/main/STANDARDS.md (hub link, theme switch, shared look, user data). Take patterns from there, not from the other apps. This file only adds what's specific to Project Tracker.
+
+- The app is `index.html` with no build step. Serve the folder (`python3 -m http.server`) to run it.
+- There is no built-in knowledge, so there is no `data/` folder. If the app ever ships project templates, they go in `data/` as the standards describe.
+- The document (`projectTracker.data` in `localStorage`) follows the standards' *User data* shape: `projects` and `tasks` records with `id` and `u`, `settings` (zoom, critical path) with `updatedAt`, and `deleted`. Every task names its `project`. Which project is open is kept per device under `projectTracker.current`, outside the document.
+- A task is `{ name, start, duration, progress, deps: [{ id, lag }], color, notes, order }`. `start` is the earliest start the person set, not where the task ends up; `duration` 0 makes it a milestone; `progress` is 0 to 100, and 100 means done; each dep is a finish-to-start link to a task it waits for, with `lag` days after it.
+- `schedule(project, tasks)` is the only place that decides dates. It returns, per task, `es` and `ef` as day numbers (days since 1970-01-01, see `dn()` / `ds()`), where `ef` is the day after the last day, so a milestone has `ef === es`; `driver`, the task that pushed it latest; and `slack` and `critical` from a backward pass. With a project's `workdays` on, durations and lags count weekdays only, through `calendar()`. Never use `new Date(string)` on a stored date.
+- Links can't form a loop: the editor hides tasks that already wait for this one (`waitsFor()`), and `canLink()` guards drag linking. `schedule()` also skips a loop if one ever arrives in an import.
+- The Gantt chart is an SVG drawn by `renderGantt()` with colors from CSS tokens (`--c-<color>` for task colors, the same set as Photo Timeline), so it follows the theme without redrawing. The `#chart` scroll box is kept between redraws so pointer capture survives a drag that redraws on every move.
+- Google Drive sync (`driveSync()`) follows Nutrition Helper's: one `Project Tracker data.json` found by name, merged with `mergeDocs()`, written a few seconds after each save, and the short-lived token kept under `projectTracker.driveTok`.

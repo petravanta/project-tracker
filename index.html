@@ -1,0 +1,996 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Project Tracker</title>
+<meta name="description" content="Plan a project as a Gantt chart: tasks with durations and dates, links for what depends on what, and tracking for how much is done.">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#172129" media="(prefers-color-scheme: dark)">
+<script>try{var t=localStorage.getItem('petravanta.theme');if(t==='light'||t==='dark')document.documentElement.dataset.theme=t}catch(e){}</script>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* ===== Shared look: petravanta's apps =====
+   Canonical copy of the tokens, type and components used by Fitness Coach and Skating Mentor (and this hub).
+   Apps currently inline this block between "Shared look" and "end shared look"; update both when it changes.
+   Each app only overrides the --accent values after this block. */
+:root{
+  --bg:#eef2f4; --surface:#ffffff; --sunk:#e3e9ec; --line:#cdd6db; --ink:#14212a; --muted:#566771; --faint:#8a99a2;
+  --lv-new:#9aa8b0; --lv-learn:#c07a00; --lv-dev:#2f6fd0; --lv-conf:#11897a; --lv-solid:#0c5e3e;
+  --lv-learn-bg:#fbefd9; --lv-dev-bg:#e1ebfa; --lv-conf-bg:#d9f1ec; --lv-solid-bg:#d5eadf;
+  --danger:#b3261e; --danger-soft:#fbe3e1;
+  --f-display:"Unbounded","Arial Rounded MT Bold",system-ui,sans-serif;
+  --f-body:"Instrument Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,monospace;
+  --r:10px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0f161b; --surface:#172129; --sunk:#111a20; --line:#2a3842; --ink:#e4ecf0; --muted:#9fb0ba; --faint:#6b7d88;
+  --lv-new:#64757f; --lv-learn:#e6a33a; --lv-dev:#6ea0f0; --lv-conf:#3cc3ad; --lv-solid:#6fd39a;
+  --lv-learn-bg:#3a2a10; --lv-dev-bg:#182a45; --lv-conf-bg:#0f3530; --lv-solid-bg:#143224;
+  --danger:#ff8a80; --danger-soft:#3d1c1a; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f161b; --surface:#172129; --sunk:#111a20; --line:#2a3842; --ink:#e4ecf0; --muted:#9fb0ba; --faint:#6b7d88;
+  --lv-new:#64757f; --lv-learn:#e6a33a; --lv-dev:#6ea0f0; --lv-conf:#3cc3ad; --lv-solid:#6fd39a;
+  --lv-learn-bg:#3a2a10; --lv-dev-bg:#182a45; --lv-conf-bg:#0f3530; --lv-solid-bg:#143224;
+  --danger:#ff8a80; --danger-soft:#3d1c1a; color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.5}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:30;background:var(--surface)}
+[hidden]{display:none!important}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.wrap{max-width:1080px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:var(--surface);border-bottom:1px solid var(--line)}
+.topbar{display:flex;align-items:center;gap:16px;padding-block:12px 0;flex-wrap:wrap}
+.brand{font-family:var(--f-display);font-weight:700;font-size:18px;letter-spacing:-.01em;display:flex;align-items:center;gap:10px}
+.brand svg{width:26px;height:26px;flex:none}
+.save-state{margin-left:auto;font-size:12px;color:var(--muted);font-family:var(--f-mono)}
+nav.tabs{display:flex;gap:4px;overflow-x:auto;padding-top:8px;scrollbar-width:none}
+nav.tabs button{background:none;border:0;border-bottom:3px solid transparent;padding:8px 12px 9px;font-weight:600;color:var(--muted);white-space:nowrap}
+nav.tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent)}
+main{padding-block:20px 80px}
+h2{font-family:var(--f-display);font-weight:500;font-size:20px;letter-spacing:-.01em;margin:0;text-wrap:balance}
+h3{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0;font-weight:600}
+p{margin:0}
+.muted{color:var(--muted)}
+.small{font-size:13px}
+.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.stack{display:flex;flex-direction:column;gap:16px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px}
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:7px 14px;font-weight:600;font-size:14px}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.ghost{background:none}
+.btn.danger{color:var(--danger)}
+.btn.sm{padding:4px 10px;font-size:13px}
+.btn.big{padding:12px 22px;font-size:16px}
+.chip{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:5px 12px;font-size:13px;font-weight:600;color:var(--muted)}
+.chip[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--bg)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+label.field{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+select,input[type=text],input[type=number],textarea{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:15px;text-transform:none;letter-spacing:0;font-weight:500;min-width:0}
+textarea{resize:vertical}
+.ctx{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;align-items:end}
+@media (max-width:720px){.ctx{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.ctx-note{font-size:13px;color:var(--muted);margin-top:10px}
+.pill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:2px 9px;font-size:12px;font-weight:700;white-space:nowrap;background:var(--sunk);color:var(--muted)}
+.pill.l1{background:var(--lv-learn-bg);color:var(--lv-learn)}
+.pill.l2{background:var(--lv-dev-bg);color:var(--lv-dev)}
+.pill.l3{background:var(--lv-conf-bg);color:var(--lv-conf)}
+.pill.l4{background:var(--lv-solid-bg);color:var(--lv-solid)}
+.two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}
+@media (max-width:720px){.two{grid-template-columns:minmax(0,1fr)}}
+.banner{background:var(--accent-soft);border-radius:var(--r);padding:12px 16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.banner p{flex:1 1 260px}
+.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+@media (max-width:620px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.stat b{display:block;font-family:var(--f-mono);font-size:24px;font-weight:500}
+.stat span{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.meter{height:8px;border-radius:4px;background:var(--sunk);overflow:hidden}
+.meter i{display:block;height:100%;border-radius:4px;background:var(--accent)}
+.scrim{position:fixed;inset:0;background:rgba(10,16,20,.35);z-index:40}
+.drawer{position:fixed;z-index:41;top:0;right:0;bottom:0;width:min(440px,100%);background:var(--surface);border-left:1px solid var(--line);overflow-y:auto;
+  padding:calc(env(safe-area-inset-top,0px) + 18px) max(18px,env(safe-area-inset-right,0px)) calc(env(safe-area-inset-bottom,0px) + 24px) 18px;display:flex;flex-direction:column;gap:16px}
+@media (max-width:640px){.drawer{top:auto;left:0;width:100%;max-height:86vh;border-left:0;border-top:1px solid var(--line);border-radius:16px 16px 0 0;padding-left:max(18px,env(safe-area-inset-left,0px))}}
+.drawer .x{position:absolute;top:calc(env(safe-area-inset-top,0px) + 12px);right:max(12px,env(safe-area-inset-right,0px));background:var(--sunk);border:0;border-radius:999px;width:32px;height:32px;font-size:18px;line-height:1}
+@media (max-width:640px){.drawer .x{top:12px}}
+.drawer h2{padding-right:40px}
+.drawer ul,.cues{margin:0;padding-left:18px}
+.checks{display:flex;flex-wrap:wrap;gap:6px}
+.checks label{display:inline-flex;align-items:center;gap:5px;font-size:13px;border:1px solid var(--line);border-radius:6px;padding:3px 8px;background:var(--sunk)}
+.entry{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 12px;padding:8px 0;border-top:1px solid var(--line)}
+.entry .meta{font-size:12px;color:var(--muted)}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom,0px) + 18px);background:var(--ink);color:var(--bg);padding:9px 16px;border-radius:999px;font-size:14px;font-weight:600;z-index:60;max-width:calc(100% - 32px)}
+.empty{padding:28px 16px;text-align:center;color:var(--muted)}
+@media (prefers-reduced-motion:no-preference){.drawer{animation:slide .18s ease-out}@keyframes slide{from{transform:translateX(24px);opacity:.4}}}
+/* ===== end shared look ===== */
+/* Project Tracker accent: green */
+:root{--accent:#2e7d32;--accent-ink:#ffffff;--accent-soft:#dcefdc}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--accent:#6fd39a;--accent-ink:#06200f;--accent-soft:#143224}}
+:root[data-theme="dark"]{--accent:#6fd39a;--accent-ink:#06200f;--accent-soft:#143224}
+
+/* Colors people pick for tasks, the same set as Photo Timeline. Each has 4.5:1 or better against --surface in its theme. */
+:root{--c-teal:#0e7c6f;--c-indigo:#4f46c8;--c-pink:#c2306f;--c-orange:#c2410c;--c-blue:#1d6fb8;--c-green:#2e7d32;--c-amber:#9a6200;--c-slate:#566771}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--c-teal:#3cc3ad;--c-indigo:#9d95ff;--c-pink:#f0679f;--c-orange:#fb8a4c;--c-blue:#6cb4ff;--c-green:#6fd39a;--c-amber:#e6a33a;--c-slate:#9fb0ba}}
+:root[data-theme="dark"]{--c-teal:#3cc3ad;--c-indigo:#9d95ff;--c-pink:#f0679f;--c-orange:#fb8a4c;--c-blue:#6cb4ff;--c-green:#6fd39a;--c-amber:#e6a33a;--c-slate:#9fb0ba}
+
+.picker{display:flex;align-items:center;gap:8px;min-width:0}
+.picker select{padding:5px 10px;font-size:14px;border-radius:999px;max-width:220px}
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.toolbar .grow{flex:1 1 0}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:999px;padding:2px;background:var(--surface);width:fit-content}
+.seg button{border:0;background:none;color:var(--muted);padding:4px 12px;border-radius:999px;font-size:14px;font-weight:600}
+.seg button:hover{color:var(--ink)}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+.stat .late{color:var(--danger)}
+
+/* Gantt: task names on the left, the chart scrolls sideways on the right. Both use the same row height. */
+.gantt{padding:0;overflow:hidden;display:grid;grid-template-columns:minmax(130px,240px) minmax(0,1fr)}
+@media (max-width:620px){.gantt{grid-template-columns:128px minmax(0,1fr)}}
+.names{border-right:1px solid var(--line);min-width:0}
+.names .hd{height:var(--head);display:flex;align-items:flex-end;padding:0 12px 8px;font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--line)}
+.names ol{list-style:none;margin:0;padding:0}
+.names li{height:var(--row);display:flex;align-items:center;gap:6px;padding:0 6px 0 8px;border-bottom:1px solid var(--line)}
+.names li.sel{background:var(--accent-soft)}
+.tick{flex:none;width:22px;height:22px;border-radius:999px;border:2px solid var(--line);background:var(--surface);padding:0;display:grid;place-items:center}
+.tick svg{width:12px;height:12px;opacity:0}
+.tick[aria-pressed="true"]{background:var(--accent);border-color:var(--accent)}
+.tick[aria-pressed="true"] svg{opacity:1}
+.tick.ms{border-radius:4px;transform:rotate(45deg) scale(.82)}
+.tick.ms svg{transform:rotate(-45deg)}
+.tname{flex:1;min-width:0;text-align:left;background:none;border:0;padding:4px 2px;font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tname.done{color:var(--muted);text-decoration:line-through;text-decoration-color:var(--faint)}
+.chart{overflow-x:auto;overflow-y:hidden;position:relative;overscroll-behavior-x:contain}
+.chart svg{display:block;-webkit-user-select:none;user-select:none}
+.chart text{font-family:var(--f-body)}
+.bar{cursor:grab}
+.bar:active{cursor:grabbing}
+.bar .end{cursor:ew-resize}
+.bar .link{opacity:0;cursor:crosshair;transition:opacity .12s}
+.bar:hover .link,.bar.sel .link,.linking .link{opacity:1}
+@media (pointer:coarse){.bar .link{opacity:1}}
+.bar .end,.bar .link{touch-action:none}
+.dep{fill:none;stroke:var(--muted);stroke-width:1.5}
+.dep.crit{stroke:var(--danger)}
+.dep:hover,.dep.sel{stroke:var(--ink);stroke-width:2.5}
+.dep-hit{fill:none;stroke:transparent;stroke-width:12;cursor:pointer}
+.chart-foot{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px 16px;align-items:center;padding:10px 12px;border-top:1px solid var(--line);font-size:13px;color:var(--muted)}
+.key{display:inline-flex;align-items:center;gap:6px}
+.key i{display:inline-block;width:18px;height:10px;border-radius:3px}
+
+/* Task list under the chart */
+.trow{display:grid;grid-template-columns:minmax(0,1fr) 110px;gap:4px 12px;padding:10px 0;border-top:1px solid var(--line);align-items:center}
+.trow:first-of-type{border-top:0}
+.trow b{display:block;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.trow .meta{font-size:13px;color:var(--muted)}
+.trow .meta .late{color:var(--danger);font-weight:600}
+.trow .pct{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted);text-align:right}
+.dot{display:inline-block;width:10px;height:10px;border-radius:999px;background:var(--sw);margin-right:6px;vertical-align:baseline}
+
+.form{display:flex;flex-direction:column;gap:14px}
+.form .inline{display:flex;gap:8px;flex-wrap:wrap;align-items:end}
+.form .inline > *{flex:1 1 140px}
+.form label.cb{display:flex;gap:10px;align-items:center;font-size:15px}
+.form label.cb input{width:20px;height:20px;accent-color:var(--accent);flex:none}
+input[type=date]{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:15px;min-width:0;text-transform:none;letter-spacing:0;font-weight:500;color:var(--ink)}
+input[type=range]{accent-color:var(--accent);width:100%}
+.swatches{display:flex;gap:8px;flex-wrap:wrap}
+.swatch{width:32px;height:32px;border-radius:999px;border:3px solid var(--surface);box-shadow:0 0 0 1px var(--line);background:var(--sw);padding:0}
+.swatch[aria-pressed="true"]{box-shadow:0 0 0 2px var(--ink)}
+.deps{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:8px;max-height:260px;overflow-y:auto}
+.deps .dep-row{display:flex;align-items:center;gap:10px;padding:8px 10px;border-top:1px solid var(--line);font-size:14px}
+.deps .dep-row:first-child{border-top:0}
+.deps .dep-row label{display:flex;align-items:center;gap:10px;flex:1;min-width:0}
+.deps .dep-row label span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.deps .dep-row input[type=checkbox]{width:18px;height:18px;accent-color:var(--accent);flex:none}
+.deps .dep-row input[type=number]{width:64px;padding:4px 6px;font-size:14px}
+.deps .dep-row .lag{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:4px}
+.note{font-size:13px;color:var(--muted)}
+div.field{display:flex;flex-direction:column;gap:6px;font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+div.field > *{text-transform:none;letter-spacing:0;font-size:14px;font-weight:500;color:var(--ink)}
+div.field > .note{font-size:13px;color:var(--muted)}
+.hero{display:flex;flex-direction:column;gap:12px;align-items:flex-start;padding:28px 20px}
+.hero p{max-width:60ch;color:var(--muted)}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+@media (pointer:coarse){.btn{min-height:40px}.btn.sm{min-height:36px}.seg button{min-height:36px}.picker select{min-height:36px}}
+@media (max-width:520px){.toolbar .btn{flex:1 1 auto}.toolbar .grow{display:none}}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <div class="topbar" style="padding-bottom:12px">
+      <a data-hub-link href="https://petravanta.github.io/general/">All apps</a>
+      <div class="brand">
+        <svg viewBox="0 0 32 32" aria-hidden="true"><rect x="3" y="5" width="13" height="6" rx="2" fill="var(--accent)"/><rect x="11" y="13" width="15" height="6" rx="2" fill="var(--accent)" opacity=".55"/><rect x="20" y="21" width="9" height="6" rx="2" fill="var(--ink)"/><path d="M16 8h2v8M26 16h-1v8" fill="none" stroke="var(--ink)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Project Tracker
+      </div>
+      <div class="picker">
+        <label class="sr-only" for="projPick">Project</label>
+        <select id="projPick"></select>
+      </div>
+      <span class="save-state" id="saveState">Saved in this browser</span>
+    </div>
+  </div>
+</header>
+<main class="wrap stack">
+  <div class="toolbar">
+    <button class="btn primary" id="addTask" type="button">+ Task</button>
+    <button class="btn" id="addMilestone" type="button">+ Milestone</button>
+    <span class="grow"></span>
+    <div class="seg" role="group" aria-label="Zoom" id="zoom">
+      <button type="button" data-zoom="day">Days</button>
+      <button type="button" data-zoom="week">Weeks</button>
+      <button type="button" data-zoom="month">Months</button>
+    </div>
+    <button class="chip" id="critBtn" type="button" aria-pressed="false" title="Tasks that would push the finish date back if they slipped">Critical path</button>
+    <button class="btn ghost" id="settingsBtn" type="button">Settings</button>
+  </div>
+
+  <section class="panel hero" id="empty" hidden>
+    <h2>Plan it, link it, tick it off</h2>
+    <p>Add the tasks in your project with how long each one takes. Link a task to the ones it has to wait for and it moves to start after them, so the chart always shows when things can really happen. Mark progress as you go and see how far along the whole project is.</p>
+    <button class="btn primary big" id="emptyAdd" type="button">Add the first task</button>
+    <p class="small">Everything stays in this browser, with optional Google Drive sync in Settings.</p>
+  </section>
+
+  <section class="panel" id="stats" hidden></section>
+  <section class="panel gantt" id="gantt" hidden></section>
+  <section class="panel stack" id="list" hidden></section>
+  <p class="sr-only" id="live" aria-live="polite"></p>
+</main>
+<div id="layer"></div>
+<input type="file" id="backupIn" accept="application/json,.json" hidden>
+<script>
+'use strict';
+/* Project Tracker. A project is a list of tasks, each with a duration, an optional earliest start, a progress and the
+   tasks it waits for (finish to start, with an optional lag). schedule() works out when each task can start and
+   finish, and which tasks are on the critical path; the Gantt chart is an SVG drawn from that by renderGantt().
+   User data follows the "User data" section of petravanta/general STANDARDS.md. */
+
+/* Google Drive sync: the shared OAuth client for petravanta.github.io (see README). Leave empty to turn Drive off. */
+const GOOGLE_CLIENT_ID = '326863468616-4hf2conk0ks0s4qdva9tphphdo7ht7eh.apps.googleusercontent.com';
+const KEY = 'projectTracker.data', CUR_KEY = 'projectTracker.current';
+const COLORS = ['teal', 'indigo', 'pink', 'orange', 'blue', 'green', 'amber', 'slate'];
+const COLOR_NAMES = { teal: 'Teal', indigo: 'Indigo', pink: 'Pink', orange: 'Orange', blue: 'Blue', green: 'Green', amber: 'Amber', slate: 'Slate' };
+const ZOOM = { day: 34, week: 14, month: 4.5 };   // pixels per day
+const ROW = 40, HEAD = 54, BAR = 20;
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
+const now = () => new Date().toISOString();
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const pad = n => String(n).padStart(2, '0');
+function lsGet(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } }
+function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } }
+
+/* ---------- Dates. Stored as YYYY-MM-DD; worked with as whole day numbers (days since 1970-01-01), so time zones and
+   daylight saving never shift a task ---------- */
+const dn = s => { const m = /^(\d{4})-(\d\d)-(\d\d)$/.exec(s || ''); return m ? Math.round(Date.UTC(+m[1], m[2] - 1, +m[3]) / 864e5) : NaN; };
+const ds = n => { const d = new Date(n * 864e5); return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`; };
+const today = () => { const d = new Date(); return Math.round(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 864e5); };
+const weekday = n => (n + 4) % 7;   // 0 Sunday … 6 Saturday
+const asDate = n => new Date(n * 864e5);
+const F = {
+  dm: new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short', timeZone: 'UTC' }),
+  dmy: new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }),
+  wdm: new Intl.DateTimeFormat(undefined, { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }),
+  m: new Intl.DateTimeFormat(undefined, { month: 'short', timeZone: 'UTC' }),
+  my: new Intl.DateTimeFormat(undefined, { month: 'long', year: 'numeric', timeZone: 'UTC' }),
+  y: new Intl.DateTimeFormat(undefined, { year: 'numeric', timeZone: 'UTC' }),
+  wd: new Intl.DateTimeFormat(undefined, { weekday: 'narrow', timeZone: 'UTC' })
+};
+const showDay = n => (asDate(n).getUTCFullYear() === asDate(today()).getUTCFullYear() ? F.dm : F.dmy).format(asDate(n));
+
+/* ---------- Document ---------- */
+function blankProject(name) {
+  return { id: uid(), name: name || 'My project', start: ds(today()), workdays: true, u: now() };
+}
+function blankDoc() {
+  return { version: 1, settings: { zoom: 'day', critical: false, updatedAt: now() }, projects: [blankProject()], tasks: [], deleted: [] };
+}
+function upgrade(d) {
+  const b = blankDoc();
+  d = d && typeof d === 'object' ? d : b;
+  d.settings = Object.assign({}, b.settings, d.settings || {});
+  if (!ZOOM[d.settings.zoom]) d.settings.zoom = 'day';
+  for (const k of ['projects', 'tasks', 'deleted']) if (!Array.isArray(d[k])) d[k] = [];
+  if (!d.projects.length) d.projects = b.projects;
+  d.projects.forEach(p => { p.workdays ??= true; if (isNaN(dn(p.start))) p.start = ds(today()); });
+  d.tasks.forEach((t, i) => {
+    t.order ??= i; t.duration = Math.max(0, Math.round(+t.duration || 0)); t.progress = clamp(Math.round(+t.progress || 0), 0, 100);
+    t.deps = Array.isArray(t.deps) ? t.deps.filter(x => x && x.id) : [];
+    t.color = COLORS.includes(t.color) ? t.color : 'teal';
+  });
+  d.version = 1;
+  return d;
+}
+let doc = upgrade(lsGet(KEY));
+let curId = lsGet(CUR_KEY);
+const cur = () => doc.projects.find(p => p.id === curId) || (curId = doc.projects[0].id, doc.projects[0]);
+const mine = () => doc.tasks.filter(t => t.project === cur().id).sort((a, b) => a.order - b.order);
+const findTask = id => doc.tasks.find(t => t.id === id);
+const touch = r => { r.u = now(); };
+const touchSettings = () => { doc.settings.updatedAt = now(); };
+let saveTimer;
+function save() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    if (!lsSet(KEY, doc)) toast('Couldn’t save in this browser. Use Settings → Export backup to keep a copy.');
+    driveSoon();
+  }, 200);
+}
+function changed() { save(); render(); }
+function removeTask(id) {
+  doc.tasks = doc.tasks.filter(t => t.id !== id);
+  doc.deleted.push(id);
+  for (const t of doc.tasks) if (t.deps.some(x => x.id === id)) { t.deps = t.deps.filter(x => x.id !== id); touch(t); }
+}
+/* Merge two copies as STANDARDS.md says: records by id (newer u wins), deletions win, newer settings win */
+function mergeDocs(a, b) {
+  const del = new Set([...(a.deleted || []), ...(b.deleted || [])]);
+  const out = { version: 1, deleted: [...del] };
+  out.settings = (b.settings?.updatedAt || '') > (a.settings?.updatedAt || '') ? b.settings : a.settings;
+  for (const k of ['projects', 'tasks']) {
+    const m = new Map();
+    for (const r of [...(a[k] || []), ...(b[k] || [])]) {
+      if (!r || !r.id || del.has(r.id)) continue;
+      const o = m.get(r.id);
+      if (!o || (r.u || '') > (o.u || '')) m.set(r.id, r);
+    }
+    out[k] = [...m.values()];
+  }
+  return upgrade(out);
+}
+
+/* ---------- Scheduling ----------
+   A task occupies the days [es, ef): ef is the day after its last day, so a milestone (no duration) has ef = es.
+   It starts on its earliest start (or the project's start), or later if a task it waits for finishes later, plus the
+   lag. With workdays on, durations and lags count Monday to Friday only and tasks start on a weekday. */
+function calendar(p) {
+  const W = p.workdays;
+  const isWork = n => !W || (weekday(n) !== 0 && weekday(n) !== 6);
+  const snap = n => { while (!isWork(n)) n++; return n; };
+  const add = (n, k) => { if (!W) return n + k; while (k > 0) { if (isWork(n)) k--; n++; } return n; };
+  const sub = (n, k) => { if (!W) return n - k; while (k > 0) { n--; if (isWork(n)) k--; } return n; };
+  const count = (a, b) => { if (!W) return b - a; let c = 0; for (let n = a; n < b; n++) if (isWork(n)) c++; return c; };
+  return { isWork, snap, add, sub, count };
+}
+function schedule(p, tasks) {
+  const C = calendar(p), by = new Map(tasks.map(t => [t.id, t])), S = new Map(), base = dn(p.start);
+  const visiting = new Set();
+  function fwd(t) {
+    if (S.has(t.id)) return S.get(t.id);
+    visiting.add(t.id);
+    const own = C.snap(isNaN(dn(t.start)) ? base : dn(t.start));
+    let es = own, driver = null;
+    for (const d of t.deps) {
+      const q = by.get(d.id);
+      if (!q || visiting.has(q.id)) continue;   // a loop can't be saved from the editor, but guard against one anyway
+      const at = C.snap(C.add(fwd(q).ef, Math.max(0, d.lag || 0)));
+      if (at > es) { es = at; driver = q.id; }
+    }
+    visiting.delete(t.id);
+    const r = { es, ef: t.duration > 0 ? C.add(es, t.duration) : es, own, driver };
+    S.set(t.id, r);
+    return r;
+  }
+  tasks.forEach(fwd);
+  const end = tasks.length ? Math.max(...tasks.map(t => S.get(t.id).ef)) : base;
+  // Backward pass: the latest each task could finish without moving the end; no slack means it's critical
+  const succ = new Map(tasks.map(t => [t.id, []]));
+  for (const t of tasks) for (const d of t.deps) if (succ.has(d.id)) succ.get(d.id).push({ t, lag: Math.max(0, d.lag || 0) });
+  const late = new Map();
+  function back(t, guard = 0) {
+    if (late.has(t.id)) return late.get(t.id);
+    if (guard > tasks.length) return S.get(t.id).es;
+    let lf = end;
+    for (const s of succ.get(t.id)) lf = Math.min(lf, C.sub(back(s.t, guard + 1), s.lag));
+    const ls = t.duration > 0 ? C.sub(lf, t.duration) : lf;
+    late.set(t.id, ls);
+    S.get(t.id).slack = C.count(S.get(t.id).es, Math.max(ls, S.get(t.id).es));
+    return ls;
+  }
+  tasks.forEach(t => back(t));
+  for (const t of tasks) S.get(t.id).critical = S.get(t.id).slack === 0;
+  return { S, end, C };
+}
+/* Every task t waits for, directly or through others. Linking t to one of these would make a loop. */
+function waitsFor(t, tasks) {
+  const by = new Map(tasks.map(x => [x.id, x])), out = new Set(), stack = [...t.deps.map(d => d.id)];
+  while (stack.length) { const id = stack.pop(); if (out.has(id)) continue; out.add(id); const q = by.get(id); if (q) stack.push(...q.deps.map(d => d.id)); }
+  return out;
+}
+function canLink(from, to, tasks) {   // may `to` wait for `from`?
+  return from.id !== to.id && !to.deps.some(d => d.id === from.id) && !waitsFor(from, tasks).has(to.id);
+}
+
+/* ---------- Progress ---------- */
+const isDone = t => t.progress >= 100;
+const weight = t => Math.max(1, t.duration);
+function summary(tasks, plan) {
+  const t0 = today();
+  const total = tasks.reduce((a, t) => a + weight(t), 0);
+  const done = tasks.reduce((a, t) => a + weight(t) * t.progress / 100, 0);
+  // Where the plan says the project should be today: the share of each task's working days already behind us
+  const due = tasks.reduce((a, t) => { const r = plan.S.get(t.id); const n = r.ef - r.es; return a + weight(t) * (n ? clamp(plan.C.count(r.es, Math.min(t0, r.ef)) / Math.max(1, plan.C.count(r.es, r.ef)), 0, 1) : (t0 >= r.es ? 1 : 0)); }, 0);
+  const late = tasks.filter(t => isLate(t, plan));
+  return { pct: total ? Math.round(done / total * 100) : 0, due: total ? Math.round(due / total * 100) : 0, finished: tasks.filter(isDone).length, late };
+}
+const isLate = (t, plan) => !isDone(t) && plan.S.get(t.id).ef <= today() && (t.duration > 0 || plan.S.get(t.id).es < today());
+const lastDay = (t, r) => t.duration > 0 ? r.ef - 1 : r.es;
+function whenText(t, r) {
+  if (t.duration === 0) return showDay(r.es);
+  const a = r.es, b = r.ef - 1;
+  return a === b ? showDay(a) : `${showDay(a)} – ${showDay(b)}`;
+}
+const durText = (t, p) => t.duration === 0 ? 'Milestone' : `${t.duration} ${p.workdays ? 'work ' : ''}day${t.duration === 1 ? '' : 's'}`;
+
+/* ---------- Rendering ---------- */
+let sel = null, selDep = null;   // selected task id; selected link as "from>to"
+function render() {
+  const p = cur(), tasks = mine(), plan = schedule(p, tasks);
+  renderPicker();
+  $('#empty').hidden = tasks.length > 0;
+  for (const id of ['#stats', '#gantt', '#list']) $(id).hidden = !tasks.length;
+  document.querySelectorAll('#zoom button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.zoom === doc.settings.zoom)));
+  $('#critBtn').setAttribute('aria-pressed', String(!!doc.settings.critical));
+  if (!tasks.length) return;
+  renderStats(p, tasks, plan);
+  renderGantt(p, tasks, plan);
+  renderList(p, tasks, plan);
+}
+function renderPicker() {
+  const s = $('#projPick');
+  s.innerHTML = doc.projects.slice().sort((a, b) => a.name.localeCompare(b.name)).map(p => `<option value="${esc(p.id)}"${p.id === cur().id ? ' selected' : ''}>${esc(p.name || 'Untitled project')}</option>`).join('') + '<option value="+">+ New project</option>';
+}
+function renderStats(p, tasks, plan) {
+  const s = summary(tasks, plan);
+  const behind = s.due - s.pct;
+  $('#stats').innerHTML = `
+    <div class="stats">
+      <div class="stat"><b>${s.pct}%</b><span>Complete</span></div>
+      <div class="stat"><b>${s.finished}<small class="muted"> / ${tasks.length}</small></b><span>Tasks done</span></div>
+      <div class="stat"><b class="${s.late.length ? 'late' : ''}">${s.late.length}</b><span>Overdue</span></div>
+      <div class="stat"><b>${esc(showDay(Math.max(...tasks.map(t => lastDay(t, plan.S.get(t.id))))))}</b><span>Finishes</span></div>
+    </div>
+    <div class="meter" style="margin-top:14px" role="img" aria-label="${s.pct}% complete; the plan expects ${s.due}% by today"><i style="width:${s.pct}%"></i></div>
+    <p class="ctx-note">${s.pct >= 100 ? 'Everything is done.' : behind > 2 ? `The plan expects ${s.due}% by today, so this is <b>${behind} points behind</b>.` : behind < -2 ? `The plan expects ${s.due}% by today, so this is ${-behind} points ahead.` : `On track: the plan expects ${s.due}% by today.`}${s.late.length ? ` Overdue: ${s.late.map(t => esc(t.name || 'Untitled')).join(', ')}.` : ''}</p>`;
+}
+
+let G = null;   // what the chart was drawn with, for pointer handling
+function renderGantt(p, tasks, plan) {
+  const ppd = ZOOM[doc.settings.zoom], t0 = today(), crit = doc.settings.critical;
+  const starts = tasks.map(t => plan.S.get(t.id).es), ends = tasks.map(t => plan.S.get(t.id).ef);
+  let lo = Math.min(...starts, t0) - 3, hi = Math.max(...ends, t0) + (doc.settings.zoom === 'month' ? 45 : doc.settings.zoom === 'week' ? 21 : 10);
+  if (doc.settings.zoom !== 'day') while (weekday(lo) !== 1) lo--;
+  const chartW = $('#gantt').clientWidth - ($('#names')?.offsetWidth || 180);
+  hi = Math.max(hi, lo + Math.ceil(chartW / ppd));
+  const W = Math.ceil((hi - lo) * ppd), H = HEAD + tasks.length * ROW;
+  const x = n => (n - lo) * ppd;
+  const rowY = i => HEAD + i * ROW;
+  const idx = new Map(tasks.map((t, i) => [t.id, i]));
+  G = { lo, ppd, x, tasks, plan, p, idx };
+  const out = [];
+  // Weekends and the day grid
+  if (doc.settings.zoom !== 'month') for (let n = lo; n < hi; n++) if (weekday(n) === 0 || weekday(n) === 6) out.push(`<rect x="${x(n)}" y="${HEAD}" width="${ppd}" height="${H - HEAD}" fill="var(--sunk)"/>`);
+  // Header: months (or years) on top, days (or weeks, or months) below
+  const top = [], bot = [];
+  for (let n = lo; n < hi; n++) {
+    const d = asDate(n), first = n === lo;
+    if (doc.settings.zoom === 'month') {
+      if (d.getUTCDate() === 1 || first) bot.push({ n, label: F.m.format(d) });
+      if ((d.getUTCMonth() === 0 && d.getUTCDate() === 1) || first) top.push({ n, label: F.y.format(d) });
+    } else {
+      if (d.getUTCDate() === 1 || first) top.push({ n, label: F.my.format(d) });
+      if (doc.settings.zoom === 'day') bot.push({ n, label: String(d.getUTCDate()), sub: F.wd.format(d) });
+      else if (weekday(n) === 1) bot.push({ n, label: String(d.getUTCDate()) });
+    }
+  }
+  for (const b of bot) out.push(`<line x1="${x(b.n) + .5}" x2="${x(b.n) + .5}" y1="${HEAD - 18}" y2="${H}" stroke="var(--line)" stroke-opacity=".6"/>`);
+  for (const t of top) out.push(`<line x1="${x(t.n) + .5}" x2="${x(t.n) + .5}" y1="0" y2="${H}" stroke="var(--line)"/><text x="${x(t.n) + 6}" y="17" font-size="12" font-weight="600" fill="var(--ink)">${esc(t.label)}</text>`);
+  for (const b of bot) {
+    const w = doc.settings.zoom === 'day' ? ppd : doc.settings.zoom === 'week' ? 7 * ppd : 30 * ppd;
+    out.push(`<text x="${x(b.n) + w / 2}" y="${HEAD - 7}" font-size="11" text-anchor="middle" fill="var(--muted)">${b.sub ? `<tspan font-weight="600">${esc(b.sub)}</tspan> ` : ''}${esc(b.label)}</text>`);
+  }
+  out.push(`<line x1="0" x2="${W}" y1="${HEAD - .5}" y2="${HEAD - .5}" stroke="var(--line)"/>`);
+  tasks.forEach((t, i) => out.push(`<line x1="0" x2="${W}" y1="${rowY(i + 1) - .5}" y2="${rowY(i + 1) - .5}" stroke="var(--line)"/>`));
+  // Today
+  const tx = x(t0) + (doc.settings.zoom === 'day' ? ppd / 2 : 0);
+  out.push(`<line x1="${tx}" x2="${tx}" y1="${HEAD - 18}" y2="${H}" stroke="var(--accent)" stroke-width="2"/><rect x="${tx - 22}" y="${HEAD - 35}" width="44" height="15" rx="7.5" fill="var(--accent)"/><text x="${tx}" y="${HEAD - 24}" font-size="10" font-weight="700" text-anchor="middle" fill="var(--accent-ink)">TODAY</text>`);
+  // Links: from the end of a task to the start of the one waiting for it
+  const outAt = new Map(), inAt = new Map();
+  tasks.forEach((t, i) => {
+    const r = plan.S.get(t.id), cy = rowY(i) + ROW / 2;
+    if (t.duration === 0) { outAt.set(t.id, [x(r.es) + 9, cy]); inAt.set(t.id, [x(r.es) - 9, cy]); }
+    else { outAt.set(t.id, [x(r.ef), cy]); inAt.set(t.id, [x(r.es), cy]); }
+  });
+  const links = [];
+  for (const t of tasks) for (const d of t.deps) {
+    if (!idx.has(d.id)) continue;
+    const [x1, y1] = outAt.get(d.id), [x2, y2] = inAt.get(t.id);
+    const down = y2 > y1 ? 1 : -1;
+    const path = x2 - x1 >= 14
+      ? `M${x1} ${y1}H${x1 + 7}V${y2}H${x2 - 1}`
+      : `M${x1} ${y1}H${x1 + 7}V${y2 - down * ROW / 2}H${x2 - 12}V${y2}H${x2 - 1}`;
+    const key = d.id + '>' + t.id;
+    const isCrit = crit && plan.S.get(t.id).critical && plan.S.get(d.id).critical && plan.S.get(t.id).driver === d.id;
+    links.push(`<g data-dep="${esc(key)}"><path class="dep-hit" d="${path}"/><path class="dep${isCrit ? ' crit' : ''}${selDep === key ? ' sel' : ''}" d="${path}" marker-end="url(#${isCrit ? 'arrC' : 'arr'})"/></g>`);
+  }
+  // Bars
+  const bars = tasks.map((t, i) => {
+    const r = plan.S.get(t.id), y = rowY(i) + (ROW - BAR) / 2, cy = rowY(i) + ROW / 2, col = `var(--c-${t.color})`;
+    const late = isLate(t, plan), isSel = sel === t.id, isCrit = crit && r.critical;
+    const label = `${esc(t.name || 'Untitled')}: ${esc(whenText(t, r))}, ${t.progress}% done${late ? ', overdue' : ''}`;
+    if (t.duration === 0) {
+      const mx = x(r.es), s = 9;
+      return `<g class="bar${isSel ? ' sel' : ''}" data-id="${esc(t.id)}" role="img" aria-label="${label}">
+        <rect x="${mx - 14}" y="${y - 4}" width="28" height="${BAR + 8}" fill="transparent" data-part="body"/>
+        <path d="M${mx} ${cy - s}L${mx + s} ${cy}L${mx} ${cy + s}L${mx - s} ${cy}Z" fill="${isDone(t) ? col : 'var(--surface)'}" stroke="${isCrit ? 'var(--danger)' : col}" stroke-width="2.5" data-part="body"/>
+        ${isSel ? `<path d="M${mx} ${cy - s - 4}L${mx + s + 4} ${cy}L${mx} ${cy + s + 4}L${mx - s - 4} ${cy}Z" fill="none" stroke="var(--ink)" stroke-width="1.5"/>` : ''}
+        <text x="${mx + s + 8}" y="${cy + 4}" font-size="12" font-weight="600" fill="${late ? 'var(--danger)' : 'var(--muted)'}">${esc(t.name || '')}${late ? ' · overdue' : ''}</text>
+        <circle class="link" cx="${mx + s + 1}" cy="${cy}" r="5" fill="var(--surface)" stroke="var(--ink)" stroke-width="1.5" data-part="link"/>
+      </g>`;
+    }
+    const bx = x(r.es), bw = Math.max(4, x(r.ef) - x(r.es)), pw = bw * t.progress / 100;
+    return `<g class="bar${isSel ? ' sel' : ''}" data-id="${esc(t.id)}" role="img" aria-label="${label}">
+      <rect x="${bx}" y="${y}" width="${bw}" height="${BAR}" rx="5" fill="${col}" fill-opacity=".22" data-part="body"/>
+      ${pw > 0 ? `<rect x="${bx}" y="${y}" width="${pw}" height="${BAR}" rx="5" fill="${col}" data-part="body"/>${pw < bw && pw > 5 ? `<rect x="${bx + pw - 5}" y="${y}" width="5" height="${BAR}" fill="${col}" data-part="body"/>` : ''}` : ''}
+      <rect x="${bx}" y="${y}" width="${bw}" height="${BAR}" rx="5" fill="none" stroke="${isCrit ? 'var(--danger)' : late ? 'var(--danger)' : col}" stroke-width="${isCrit ? 2.5 : 1.5}" ${late && !isCrit ? 'stroke-dasharray="4 3"' : ''} data-part="body"/>
+      ${isSel ? `<rect x="${bx - 3}" y="${y - 3}" width="${bw + 6}" height="${BAR + 6}" rx="7" fill="none" stroke="var(--ink)" stroke-width="1.5"/>` : ''}
+      <rect class="end" x="${bx + bw - 6}" y="${y}" width="10" height="${BAR}" fill="transparent" data-part="end"/>
+      <text x="${bx + bw + 14}" y="${cy + 4}" font-size="12" font-weight="600" fill="${late ? 'var(--danger)' : 'var(--muted)'}">${t.progress}%${late ? ' · overdue' : ''}</text>
+      <circle class="link" cx="${bx + bw + 4}" cy="${cy}" r="5" fill="var(--surface)" stroke="var(--ink)" stroke-width="1.5" data-part="link"/>
+    </g>`;
+  });
+  const defs = `<defs>
+    <marker id="arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L8 4L0 8z" fill="var(--muted)"/></marker>
+    <marker id="arrC" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L8 4L0 8z" fill="var(--danger)"/></marker></defs>`;
+  const g = $('#gantt');
+  g.style.setProperty('--row', ROW + 'px');
+  g.style.setProperty('--head', HEAD + 'px');
+  // The scroll box stays put between redraws so a drag that started on it keeps its pointer
+  if (!$('#chart')) g.innerHTML = '<div class="names" id="names"></div><div class="chart" id="chart"></div><div class="chart-foot" id="foot"></div>';
+  const ch = $('#chart'), keep = ch.scrollLeft;
+  $('#names').innerHTML = `<div class="hd">Task</div><ol>${tasks.map(t => `<li class="${sel === t.id ? 'sel' : ''}">
+      <button type="button" class="tick${t.duration === 0 ? ' ms' : ''}" data-tick="${esc(t.id)}" aria-pressed="${isDone(t)}" aria-label="${esc(t.name || 'Untitled')} done"><svg viewBox="0 0 12 12"><path d="M2 6.5l2.5 2.5L10 3" fill="none" stroke="var(--accent-ink)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      <button type="button" class="tname${isDone(t) ? ' done' : ''}" data-edit="${esc(t.id)}" title="${esc(t.name || 'Untitled')}">${esc(t.name || 'Untitled')}</button></li>`).join('')}</ol>`;
+  ch.innerHTML = `<svg id="svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-label="Gantt chart">${defs}${out.join('')}<g>${links.join('')}</g>${bars.join('')}<g id="ghost"></g></svg>`;
+  $('#foot').innerHTML = `
+      <span class="key"><i style="background:var(--c-teal)"></i>Done part</span>
+      <span class="key"><i style="background:var(--c-teal);opacity:.25"></i>Still to do</span>
+      ${crit ? '<span class="key"><i style="border:2px solid var(--danger)"></i>Critical path</span>' : ''}
+      <span>Drag a bar to move it, its end to change how long it takes, or the dot at its end onto another task to link them.${selDep ? ' <button class="btn sm danger" type="button" id="unlink">Remove selected link</button>' : ' Click a link to select it.'}</span>`;
+  if (!resetScroll) ch.scrollLeft = keep;
+  else { ch.scrollLeft = 0; resetScroll = false; }   // the chart starts just before the earliest task or today
+  wireGantt();
+}
+let resetScroll = true;
+
+function renderList(p, tasks, plan) {
+  $('#list').innerHTML = `<h3>Tasks</h3><div>${tasks.map(t => {
+    const r = plan.S.get(t.id), late = isLate(t, plan);
+    const waits = t.deps.map(d => findTask(d.id)).filter(Boolean).map(q => esc(q.name || 'Untitled'));
+    return `<div class="trow">
+      <div><b><span class="dot" style="--sw:var(--c-${t.color})"></span>${esc(t.name || 'Untitled')}</b>
+        <span class="meta">${esc(whenText(t, r))} · ${esc(durText(t, p))}${waits.length ? ` · after ${waits.join(', ')}` : ''}${r.slack && !isDone(t) ? ` · ${r.slack} day${r.slack === 1 ? '' : 's'} to spare` : ''}${late ? ' · <span class="late">overdue</span>' : ''}</span>
+        ${t.notes ? `<span class="meta" style="display:block">${esc(t.notes)}</span>` : ''}</div>
+      <div class="pct"><span>${isDone(t) ? 'Done' : t.progress + '%'}</span><div class="meter"><i style="width:${t.progress}%"></i></div><button class="btn sm" type="button" data-edit="${esc(t.id)}">Edit</button></div>
+    </div>`;
+  }).join('')}</div>`;
+  $('#list').querySelectorAll('[data-edit]').forEach(b => b.onclick = () => editTask(b.dataset.edit));
+}
+
+/* ---------- Chart interaction ----------
+   Pointer events are caught on the scroll box, which survives redraws, so a drag keeps going while the SVG is redrawn.
+   body: moves the task's earliest start. end: changes its duration. link: drop on another task to make it wait. */
+let drag = null;
+function wireGantt() {
+  const g = $('#gantt'), ch = $('#chart');
+  g.querySelectorAll('[data-tick]').forEach(b => b.onclick = () => {
+    const t = findTask(b.dataset.tick);
+    t.progress = isDone(t) ? 0 : 100; touch(t); changed();
+    $('#live').textContent = `${t.name || 'Task'} ${isDone(t) ? 'done' : 'not done'}`;
+  });
+  g.querySelectorAll('.names [data-edit]').forEach(b => b.onclick = () => editTask(b.dataset.edit));
+  const un = $('#unlink');
+  if (un) un.onclick = () => removeLink(selDep);
+  g.querySelectorAll('[data-dep]').forEach(el => el.onclick = e => { e.stopPropagation(); selDep = selDep === el.dataset.dep ? null : el.dataset.dep; sel = null; render(); });
+  ch.onpointerdown = onDown;
+  ch.onpointermove = onMove;
+  ch.onpointerup = onUp;
+  ch.onpointercancel = () => { if (drag) { drag = null; $('#ghost').innerHTML = ''; } };
+  ch.onclick = e => { if (selDep && !e.target.closest('[data-dep]')) { selDep = null; render(); } };
+}
+function onDown(e) {
+  if (e.button > 0) return;
+  const part = e.target.closest('[data-part]'), bar = e.target.closest('.bar');
+  if (!part || !bar) return;
+  const t = findTask(bar.dataset.id), r = G.plan.S.get(t.id);
+  drag = { id: t.id, part: part.dataset.part, x0: e.clientX, moved: false, es: r.es, ef: r.ef, dur: t.duration, start: t.start };
+  $('#chart').setPointerCapture(e.pointerId);
+  if (drag.part !== 'body' || e.pointerType !== 'touch') e.preventDefault();
+}
+function onMove(e) {
+  if (!drag) return;
+  const dx = e.clientX - drag.x0;
+  if (!drag.moved && Math.abs(dx) < 4 && drag.part !== 'link') return;
+  drag.moved = true;
+  const t = findTask(drag.id), C = calendar(G.p);
+  if (drag.part === 'link') return drawGhost(e);
+  const days = Math.round(dx / G.ppd);
+  if (drag.part === 'body') {
+    const want = ds(drag.es + days);
+    if (t.start !== want) { t.start = want; render(); }
+  } else {
+    const fin = Math.max(drag.es + 1, drag.ef + days);
+    const dur = Math.max(1, C.count(drag.es, fin));
+    if (t.duration !== dur) { t.duration = dur; render(); }
+  }
+}
+function onUp(e) {
+  if (!drag) return;
+  const d = drag; drag = null;
+  const t = findTask(d.id);
+  if (d.part === 'link') {
+    $('#ghost').innerHTML = '';
+    const el = document.elementFromPoint(e.clientX, e.clientY), bar = el && el.closest('.bar');
+    const to = bar && findTask(bar.dataset.id);
+    if (!to || to.id === t.id) { if (!d.moved || !to) toast('Drag the dot onto the task that should wait for this one.'); return; }
+    return addLink(t, to);
+  }
+  if (!d.moved) { sel = t.id; selDep = null; return editTask(t.id); }
+  touch(t);
+  const r = schedule(G.p, mine()).S.get(t.id);
+  if (d.part === 'body' && r.es > dn(t.start)) toast(`It can’t start before ${showDay(r.es)}: it waits for ${findTask(r.driver)?.name || 'another task'}.`, 4000);
+  changed();
+}
+function drawGhost(e) {
+  const sv = $('#svg').getBoundingClientRect(), r = G.plan.S.get(drag.id), i = G.idx.get(drag.id), t = findTask(drag.id);
+  const x1 = t.duration === 0 ? G.x(r.es) + 10 : G.x(r.ef) + 4, y1 = HEAD + i * ROW + ROW / 2;
+  $('#ghost').innerHTML = `<line x1="${x1}" y1="${y1}" x2="${e.clientX - sv.left}" y2="${e.clientY - sv.top}" stroke="var(--accent)" stroke-width="2" stroke-dasharray="5 4"/><circle cx="${e.clientX - sv.left}" cy="${e.clientY - sv.top}" r="5" fill="var(--accent)"/>`;
+}
+function addLink(from, to) {
+  const tasks = mine();
+  if (to.deps.some(d => d.id === from.id)) return toast(`${to.name || 'That task'} already waits for ${from.name || 'this one'}.`);
+  if (!canLink(from, to, tasks)) return toast(`That would make a loop: ${from.name || 'this task'} already waits for ${to.name || 'that one'}.`, 4000);
+  to.deps.push({ id: from.id, lag: 0 }); touch(to);
+  changed();
+  toast(`${to.name || 'Task'} now waits for ${from.name || 'task'}`);
+}
+function removeLink(key) {
+  const [from, to] = key.split('>'), t = findTask(to);
+  if (t) { t.deps = t.deps.filter(d => d.id !== from); touch(t); }
+  selDep = null; changed(); toast('Link removed');
+}
+document.addEventListener('keydown', e => {
+  if ((e.key === 'Delete' || e.key === 'Backspace') && selDep && !$('#layer').firstChild && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) { e.preventDefault(); removeLink(selDep); }
+});
+
+/* ---------- Drawers ---------- */
+let lastFocus = null;
+function openDrawer(title, inner, wire) {
+  lastFocus = document.activeElement;
+  $('#layer').innerHTML = `<div class="scrim" data-close></div><aside class="drawer" role="dialog" aria-modal="true" aria-label="${esc(title)}"><button class="x" type="button" data-close aria-label="Close">×</button><h2>${esc(title)}</h2><form class="form" id="dform" onsubmit="return false">${inner}</form></aside>`;
+  $('#layer').querySelectorAll('[data-close]').forEach(b => b.onclick = closeDrawer);
+  const f = $('#dform');
+  wire && wire(f);
+  (f.querySelector('input,select,button') || $('#layer .x')).focus({ preventScroll: true });
+}
+function closeDrawer() {
+  $('#layer').innerHTML = '';
+  if (sel) { sel = null; render(); }
+  if (lastFocus && document.contains(lastFocus)) lastFocus.focus({ preventScroll: true });
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('#layer').firstChild) closeDrawer(); });
+/* A delete button that asks for a second tap instead of a browser dialog */
+function wireDelete(btn, label, onDelete) {
+  btn.onclick = () => {
+    if (btn.dataset.armed) { onDelete(); closeDrawer(); return; }
+    btn.dataset.armed = '1'; btn.textContent = label;
+    setTimeout(() => { if (document.contains(btn)) { delete btn.dataset.armed; btn.textContent = 'Delete'; } }, 4000);
+  };
+}
+
+function newTask(milestone) {
+  const p = cur(), tasks = mine(), plan = schedule(p, tasks);
+  const last = tasks[tasks.length - 1];
+  const t = {
+    id: uid(), project: p.id, name: '', start: ds(Math.max(dn(p.start), today())), duration: milestone ? 0 : 5, progress: 0,
+    deps: [], color: last ? last.color : 'teal', notes: '', order: tasks.length ? Math.max(...tasks.map(x => x.order)) + 1 : 0, u: now()
+  };
+  // A new task follows the one that ends last, which is the usual next step when planning from the top down
+  if (tasks.length) {
+    const lastEnd = tasks.reduce((a, x) => plan.S.get(x.id).ef > plan.S.get(a.id).ef ? x : a, tasks[0]);
+    t.deps.push({ id: lastEnd.id, lag: 0 });
+  }
+  doc.tasks.push(t);
+  changed();
+  editTask(t.id, true);
+}
+function editTask(id, isNew) {
+  const t = findTask(id);
+  if (!t) return;
+  sel = id; selDep = null; render();
+  const p = cur(), tasks = mine();
+  const blocked = new Set([...tasks.filter(q => waitsFor(q, tasks).has(t.id)).map(q => q.id)]);   // these wait for t, so t can't wait for them
+  const others = tasks.filter(q => q.id !== t.id && !blocked.has(q.id));
+  const unit = p.workdays ? 'work days' : 'days';
+  openDrawer(isNew ? (t.duration === 0 ? 'New milestone' : 'New task') : (t.name || 'Task'), `
+    <label class="field">Name<input type="text" id="tName" value="${esc(t.name)}" placeholder="${t.duration === 0 ? 'Launch day' : 'Write the brief'}" autocomplete="off"></label>
+    <label class="cb"><input type="checkbox" id="tMs"${t.duration === 0 ? ' checked' : ''}> Milestone (a single day, no duration)</label>
+    <div class="inline">
+      <label class="field">Earliest start<input type="date" id="tStart" value="${esc(t.start || p.start)}"></label>
+      <label class="field" id="tDurF"${t.duration === 0 ? ' hidden' : ''}>Duration (${unit})<input type="number" id="tDur" min="1" step="1" value="${Math.max(1, t.duration)}"></label>
+    </div>
+    <p class="note" id="tWhen"></p>
+    <div class="field">Progress <span id="tPctL" class="mono">${t.progress}%</span>
+      <input type="range" id="tPct" min="0" max="100" step="5" value="${t.progress}" aria-label="Progress"></div>
+    <label class="cb"><input type="checkbox" id="tDone"${isDone(t) ? ' checked' : ''}> Done</label>
+    <div class="field">Waits for
+      ${others.length ? `<div class="deps">${others.map(q => { const d = t.deps.find(x => x.id === q.id); return `<div class="dep-row">
+        <label><input type="checkbox" data-dep-id="${esc(q.id)}"${d ? ' checked' : ''}><span>${esc(q.name || 'Untitled')}</span></label>
+        <span class="lag"${d ? '' : ' hidden'}>+<input type="number" min="0" step="1" value="${d ? d.lag || 0 : 0}" data-lag-id="${esc(q.id)}" aria-label="Days to wait after ${esc(q.name || 'it')} finishes"> d</span></div>`; }).join('')}</div>
+      <span class="note">It starts once every task ticked here has finished, plus the days after the +. Tasks that already wait for this one aren’t listed.</span>` : '<span class="note">Add more tasks to link this one to them.</span>'}
+    </div>
+    <div class="field">Color<div class="swatches" role="group" aria-label="Color">${COLORS.map(c => `<button type="button" class="swatch" style="--sw:var(--c-${c})" data-color="${c}" aria-label="${COLOR_NAMES[c]}" aria-pressed="${c === t.color}"></button>`).join('')}</div></div>
+    <label class="field">Notes<textarea id="tNotes" rows="3">${esc(t.notes || '')}</textarea></label>
+    <div class="row">
+      <button class="btn primary" type="button" data-close>Done</button>
+      <button class="btn" type="button" id="tUp">Move up</button>
+      <button class="btn" type="button" id="tDown">Move down</button>
+      <span class="grow" style="flex:1"></span>
+      <button class="btn danger" type="button" id="tDel">Delete</button>
+    </div>`, f => {
+    const upd = (fn, redraw = true) => { fn(); touch(t); save(); if (redraw) render(); when(); };
+    const when = () => {
+      const pl = schedule(cur(), mine()), rr = pl.S.get(t.id);
+      if (!rr) return;
+      const pushed = rr.es > calendar(cur()).snap(dn(t.start || cur().start));
+      f.querySelector('#tWhen').innerHTML = `${t.duration === 0 ? 'On' : 'Runs'} <b>${esc(whenText(t, rr))}</b>${pushed && rr.driver ? `, after ${esc(findTask(rr.driver)?.name || 'another task')}` : ''}.${rr.slack ? ` It could slip ${rr.slack} day${rr.slack === 1 ? '' : 's'} without moving the finish.` : ' It’s on the critical path: if it slips, the project finishes later.'}`;
+    };
+    when();
+    f.querySelector('#tName').oninput = e => upd(() => { t.name = e.target.value; });
+    f.querySelector('#tName').onkeydown = e => { if (e.key === 'Enter') closeDrawer(); };
+    f.querySelector('#tMs').onchange = e => upd(() => { t.duration = e.target.checked ? 0 : Math.max(1, +f.querySelector('#tDur').value || 1); f.querySelector('#tDurF').hidden = e.target.checked; });
+    f.querySelector('#tStart').onchange = e => upd(() => { if (!isNaN(dn(e.target.value))) t.start = e.target.value; });
+    f.querySelector('#tDur').oninput = e => { const v = Math.round(+e.target.value); if (v >= 1) upd(() => { t.duration = v; }); };
+    const pctL = f.querySelector('#tPctL'), done = f.querySelector('#tDone'), pct = f.querySelector('#tPct');
+    pct.oninput = () => upd(() => { t.progress = +pct.value; pctL.textContent = t.progress + '%'; done.checked = isDone(t); });
+    done.onchange = () => upd(() => { t.progress = done.checked ? 100 : (t.progress >= 100 ? 0 : t.progress); pct.value = t.progress; pctL.textContent = t.progress + '%'; });
+    f.querySelectorAll('[data-dep-id]').forEach(cb => cb.onchange = () => upd(() => {
+      const lagBox = f.querySelector(`[data-lag-id="${CSS.escape(cb.dataset.depId)}"]`);
+      lagBox.parentElement.hidden = !cb.checked;
+      t.deps = t.deps.filter(d => d.id !== cb.dataset.depId);
+      if (cb.checked) t.deps.push({ id: cb.dataset.depId, lag: Math.max(0, Math.round(+lagBox.value || 0)) });
+    }));
+    f.querySelectorAll('[data-lag-id]').forEach(inp => inp.oninput = () => upd(() => {
+      const d = t.deps.find(x => x.id === inp.dataset.lagId);
+      if (d) d.lag = Math.max(0, Math.round(+inp.value || 0));
+    }));
+    f.querySelectorAll('[data-color]').forEach(b => b.onclick = () => upd(() => {
+      t.color = b.dataset.color;
+      f.querySelectorAll('[data-color]').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+    }));
+    f.querySelector('#tNotes').oninput = e => upd(() => { t.notes = e.target.value; }, false);
+    const move = dir => {
+      const list = mine(), i = list.findIndex(x => x.id === t.id), j = i + dir;
+      if (j < 0 || j >= list.length) return;
+      [list[i], list[j]] = [list[j], list[i]];
+      list.forEach((x, k) => { if (x.order !== k) { x.order = k; touch(x); } });
+      changed();
+    };
+    f.querySelector('#tUp').onclick = () => move(-1);
+    f.querySelector('#tDown').onclick = () => move(1);
+    wireDelete(f.querySelector('#tDel'), 'Tap again to delete', () => { removeTask(t.id); sel = null; changed(); toast('Task deleted'); });
+    if (isNew) f.querySelector('#tName').focus();
+  });
+}
+
+function settings() {
+  const p = cur();
+  openDrawer('Settings', `
+    <h3>This project</h3>
+    <label class="field">Name<input type="text" id="pName" value="${esc(p.name)}" autocomplete="off"></label>
+    <label class="field">Starts<input type="date" id="pStart" value="${esc(p.start)}"></label>
+    <span class="note">Tasks with no earlier start of their own, and nothing to wait for, begin on this day.</span>
+    <label class="cb"><input type="checkbox" id="pWork"${p.workdays ? ' checked' : ''}> Skip weekends (durations count Monday to Friday)</label>
+    <div class="row"><button class="btn" type="button" id="pNew">+ New project</button><button class="btn danger" type="button" id="pDel">Delete</button></div>
+    <h3>Your data</h3>
+    <p class="small">Everything is kept in this browser. A backup holds every project.</p>
+    <div class="row"><button class="btn" type="button" id="sExport">Export backup</button><button class="btn" type="button" id="sImport">Import backup</button></div>
+    <h3>Google Drive</h3>
+    <div id="drivePanel">${drivePanel()}</div>`, f => {
+    const upd = fn => { fn(); touch(p); changed(); };
+    f.querySelector('#pName').oninput = e => upd(() => { p.name = e.target.value; });
+    f.querySelector('#pStart').onchange = e => { if (!isNaN(dn(e.target.value))) upd(() => { p.start = e.target.value; }); };
+    f.querySelector('#pWork').onchange = e => upd(() => { p.workdays = e.target.checked; });
+    f.querySelector('#pNew').onclick = () => { closeDrawer(); newProject(); };
+    wireDelete(f.querySelector('#pDel'), doc.projects.length > 1 ? 'Tap again to delete this project' : 'Tap again to clear this project', () => {
+      for (const t of doc.tasks.filter(t => t.project === p.id)) removeTask(t.id);
+      doc.projects = doc.projects.filter(x => x.id !== p.id); doc.deleted.push(p.id);
+      if (!doc.projects.length) doc.projects.push(blankProject());
+      setCurrent(doc.projects[0].id); changed(); toast('Project deleted');
+    });
+    f.querySelector('#sExport').onclick = exportBackup;
+    f.querySelector('#sImport').onclick = () => $('#backupIn').click();
+    wireDrive(f);
+  });
+}
+function newProject() {
+  const p = blankProject('New project');
+  doc.projects.push(p);
+  setCurrent(p.id); resetScroll = true; changed();
+  settings();
+  setTimeout(() => { const n = $('#pName'); if (n) n.select(); }, 0);
+}
+function setCurrent(id) { curId = id; lsSet(CUR_KEY, id); sel = null; selDep = null; }
+
+/* ---------- Backup ---------- */
+function download(blob, name) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+function exportBackup() {
+  download(new Blob([JSON.stringify({ app: 'project-tracker', ...doc }, null, 1)], { type: 'application/json' }), `Project Tracker backup ${ds(today())}.json`);
+  toast('Backup saved');
+}
+$('#backupIn').onchange = async e => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  try {
+    const data = JSON.parse(await file.text());
+    if (!data || !Array.isArray(data.projects) || !Array.isArray(data.tasks)) throw new Error('shape');
+    doc = mergeDocs(doc, data);
+    changed(); closeDrawer(); toast('Backup merged in');
+  } catch (err) { toast('That file isn’t a Project Tracker backup.'); }
+};
+
+/* ---------- Google Drive sync ----------
+   Uses the drive.file scope, so the app can only see the one file it creates. */
+const DRIVE_FILE = 'Project Tracker data.json', DAPI = 'https://www.googleapis.com';
+const Drive = { token: null, exp: 0, fileId: lsGet('projectTracker.driveFile'), on: !!lsGet('projectTracker.driveOn'), busy: false, last: null, timer: null, err: null };
+// Keep the short-lived Google token across reloads so reopening the app doesn't pause sync
+(() => { const t = lsGet('projectTracker.driveTok'); if (Drive.on && t && t.exp > Date.now()) { Drive.token = t.token; Drive.exp = t.exp; } })();
+const driveConfigured = () => !!GOOGLE_CLIENT_ID;
+const driveLive = () => !!Drive.token && Date.now() < Drive.exp;
+function loadGis() {
+  return new Promise((res, rej) => {
+    if (window.google && google.accounts && google.accounts.oauth2) return res();
+    const sc = document.createElement('script'); sc.src = 'https://accounts.google.com/gsi/client'; sc.onload = res; sc.onerror = () => rej(new Error('gis')); document.head.appendChild(sc);
+  });
+}
+function driveToken() {
+  return new Promise(async (res, rej) => {
+    try { await loadGis(); } catch (e) { return rej(e); }
+    const c = google.accounts.oauth2.initTokenClient({
+      client_id: GOOGLE_CLIENT_ID, scope: 'https://www.googleapis.com/auth/drive.file',
+      callback: r => { if (r.error) return rej(r); Drive.token = r.access_token; Drive.exp = Date.now() + (Number(r.expires_in || 3600) - 60) * 1000; lsSet('projectTracker.driveTok', { token: Drive.token, exp: Drive.exp }); res(); },
+      error_callback: rej
+    });
+    c.requestAccessToken({ prompt: Drive.on ? '' : 'consent' });
+  });
+}
+async function dfetch(path, opt = {}) {
+  if (!driveLive()) throw { code: 'expired' };
+  const r = await fetch(DAPI + path, { ...opt, headers: { ...(opt.headers || {}), Authorization: 'Bearer ' + Drive.token } });
+  if (r.status === 401) { Drive.token = null; lsSet('projectTracker.driveTok', null); throw { code: 'expired' }; }
+  if (!r.ok) throw { code: 'http', status: r.status };
+  return r;
+}
+async function driveFind() {
+  if (Drive.fileId) {
+    try { const j = await (await dfetch(`/drive/v3/files/${Drive.fileId}?fields=id,trashed`)).json(); if (!j.trashed) return Drive.fileId; }
+    catch (e) { if (e.code === 'expired') throw e; }
+  }
+  const q = encodeURIComponent(`name='${DRIVE_FILE}' and trashed=false`);
+  const j = await (await dfetch(`/drive/v3/files?q=${q}&orderBy=modifiedTime desc&fields=files(id)`)).json();
+  Drive.fileId = j.files && j.files[0] ? j.files[0].id : null; lsSet('projectTracker.driveFile', Drive.fileId);
+  return Drive.fileId;
+}
+async function driveRead() { const id = await driveFind(); return id ? (await dfetch(`/drive/v3/files/${id}?alt=media`)).json() : null; }
+async function driveWrite() {
+  const body = JSON.stringify({ app: 'project-tracker', ...doc });
+  const id = await driveFind();
+  if (id) { await dfetch(`/upload/drive/v3/files/${id}?uploadType=media`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body }); return; }
+  const b = 'pt' + uid().slice(0, 8), meta = JSON.stringify({ name: DRIVE_FILE, mimeType: 'application/json' });
+  const multi = `--${b}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${meta}\r\n--${b}\r\nContent-Type: application/json\r\n\r\n${body}\r\n--${b}--`;
+  const j = await (await dfetch('/upload/drive/v3/files?uploadType=multipart&fields=id', { method: 'POST', headers: { 'Content-Type': 'multipart/related; boundary=' + b }, body: multi })).json();
+  Drive.fileId = j.id; lsSet('projectTracker.driveFile', j.id);
+}
+function driveStatus() {
+  if (!driveConfigured() || !Drive.on) return null;
+  if (Drive.busy) return 'Syncing with Google Drive…';
+  if (Drive.err) return Drive.err;
+  if (!driveLive()) return 'Google Drive paused';
+  return 'Synced to Google Drive' + (Drive.last ? ' · ' + Drive.last.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '');
+}
+function showDriveStatus() {
+  $('#saveState').textContent = driveStatus() || 'Saved in this browser';
+  const dp = $('#drivePanel');
+  if (dp) { dp.innerHTML = drivePanel(); wireDrive($('#dform')); }
+}
+async function driveSync(interactive) {
+  if (Drive.busy) return;
+  try {
+    if (!driveLive()) { if (!interactive) { showDriveStatus(); return; } await driveToken(); }
+    Drive.busy = true; Drive.err = null; showDriveStatus();
+    const remote = await driveRead();
+    if (remote && remote.app === 'project-tracker') { const before = JSON.stringify(doc); doc = mergeDocs(doc, remote); lsSet(KEY, doc); if (JSON.stringify(doc) !== before && !$('#layer').firstChild) render(); }
+    await driveWrite();
+    Drive.on = true; lsSet('projectTracker.driveOn', true); Drive.last = new Date();
+  } catch (e) {
+    if (e && e.code !== 'expired') Drive.err = (e.type === 'popup_closed' || e.error === 'access_denied') ? null : 'Couldn’t reach Google Drive';
+    if (interactive && Drive.err) toast('Couldn’t connect to Google Drive. Everything is still saved in this browser.');
+  } finally { Drive.busy = false; showDriveStatus(); }
+}
+function driveSoon() {
+  if (!driveConfigured() || !Drive.on) return;
+  clearTimeout(Drive.timer);
+  Drive.timer = setTimeout(async () => {
+    if (!driveLive()) { showDriveStatus(); return; }
+    try { Drive.busy = true; showDriveStatus(); await driveWrite(); Drive.last = new Date(); Drive.err = null; }
+    catch (e) { if (e.code !== 'expired') Drive.err = 'Couldn’t reach Google Drive'; }
+    finally { Drive.busy = false; showDriveStatus(); }
+  }, 3000);
+}
+function driveDisconnect() {
+  if (Drive.token && window.google && google.accounts && google.accounts.oauth2) google.accounts.oauth2.revoke(Drive.token, () => {});
+  Drive.token = null; Drive.on = false; Drive.err = null; lsSet('projectTracker.driveOn', false); lsSet('projectTracker.driveTok', null); showDriveStatus();
+}
+function drivePanel() {
+  if (!driveConfigured()) return '<p class="small muted">Google Drive sync isn’t set up for this copy of the app.</p>';
+  if (!Drive.on) return `<p class="small">Keep your projects in your own Google Drive and pick them up on any device. The app can only see the one file it creates there.</p>
+    <div class="row" style="margin-top:8px"><button class="btn sm primary" type="button" data-drive="sync">Connect Google Drive</button></div>`;
+  return `<p class="small">${esc(driveStatus() || '')}. Changes save to <b>${esc(DRIVE_FILE)}</b> in your Drive a few seconds after you make them.</p>
+    <div class="row" style="margin-top:8px">${driveLive() ? '<button class="btn sm" type="button" data-drive="sync">Sync now</button>' : '<button class="btn sm primary" type="button" data-drive="sync">Resume sync</button>'}
+    <button class="btn sm ghost" type="button" data-drive="off">Disconnect</button></div>`;
+}
+function wireDrive(f) {
+  if (!f) return;
+  f.querySelectorAll('[data-drive]').forEach(b => b.onclick = () => b.dataset.drive === 'off' ? driveDisconnect() : driveSync(true));
+}
+
+/* ---------- Toast ---------- */
+let toastTimer;
+function toast(msg, ms = 2600) {
+  clearTimeout(toastTimer);
+  let t = $('.toast');
+  if (!msg) { t && t.remove(); return; }
+  if (!t) { t = document.createElement('div'); t.className = 'toast'; t.setAttribute('role', 'status'); document.body.appendChild(t); }
+  t.textContent = msg;
+  toastTimer = setTimeout(() => t.remove(), ms);
+}
+
+/* ---------- Start ---------- */
+$('#addTask').onclick = () => newTask(false);
+$('#emptyAdd').onclick = () => newTask(false);
+$('#addMilestone').onclick = () => newTask(true);
+$('#settingsBtn').onclick = settings;
+$('#critBtn').onclick = () => { doc.settings.critical = !doc.settings.critical; touchSettings(); changed(); };
+document.querySelectorAll('#zoom button').forEach(b => b.onclick = () => { doc.settings.zoom = b.dataset.zoom; touchSettings(); resetScroll = true; changed(); });
+$('#projPick').onchange = e => {
+  if (e.target.value === '+') { renderPicker(); return newProject(); }
+  setCurrent(e.target.value); resetScroll = true; render();
+};
+let resizeT;
+addEventListener('resize', () => { clearTimeout(resizeT); resizeT = setTimeout(render, 120); });
+addEventListener('storage', e => { if (e.key === KEY) { doc = upgrade(lsGet(KEY)); render(); } });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && driveLive()) driveSync(false); });
+render();
+showDriveStatus();
+if (Drive.on) driveSync(false);   // the Drive copy may have changed on another device
+</script>
+<script src="https://petravanta.github.io/general/shared/hub-link.js" defer></script>
+<script src="https://petravanta.github.io/general/shared/theme-switch.js" defer></script>
+</body>
+</html>
