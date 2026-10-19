@@ -13,7 +13,7 @@ Plan a project as a Gantt chart: tasks with durations and dates, links for what 
 
 ## What it does
 
-- **Days, Weeks or Months** zoom. Weekends are shaded, and today is marked.
+- **Zoom** from days through weeks, months and quarters to years, for projects that run from a few days to many years. Use **−** and **+**, pick a scale from the menu, or **Fit** to see the whole project at once (Ctrl or ⌘ with the scroll wheel, or a trackpad pinch, zooms too). Weekends are shaded when days are wide enough to see, and today is marked.
 - **Skip weekends** (on by default, in *Settings*): durations and waits count Monday to Friday, and tasks start on a weekday. Turn it off to count calendar days.
 - **Critical path** highlights the tasks and links that would push the finish date back if they slipped. Every other task shows how many days it could slip.
 - **As many projects as you like**, from the picker in the header. Each has its own name, start date and weekend setting.
