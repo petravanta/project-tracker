@@ -139,9 +139,15 @@ textarea{resize:vertical}
 .names{border-right:1px solid var(--line);min-width:0}
 .names .hd{height:var(--head);display:flex;align-items:flex-end;padding:0 12px 8px;font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--line)}
 .names ol{list-style:none;margin:0;padding:0}
-.names li{height:var(--row);display:flex;align-items:center;gap:4px;padding:0 6px 0 2px;border-bottom:1px solid var(--line);background:var(--surface);position:relative}
-.names li.lifted{z-index:5;box-shadow:0 4px 14px rgba(0,0,0,.18);border-radius:6px}
-.names.sorting li:not(.lifted){transition:transform .12s ease}
+.names{position:relative}
+.names li{height:var(--row);display:flex;align-items:center;gap:4px;padding:0 6px 0 2px;border-bottom:1px solid var(--line);background:var(--surface);position:relative;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+.names li.lifted{z-index:5;box-shadow:0 4px 14px rgba(0,0,0,.18);border-radius:6px;opacity:.92}
+.drop-line{position:absolute;right:0;height:3px;margin-top:-1px;border-radius:2px;background:var(--accent);z-index:6;pointer-events:none}
+.drop-line::before{content:'';position:absolute;left:-4px;top:-3px;width:9px;height:9px;border-radius:50%;background:var(--accent)}
+.rowmenu{position:fixed;z-index:50;min-width:200px;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2);padding:6px;display:flex;flex-direction:column}
+.rowmenu button{display:block;width:100%;text-align:left;background:none;border:0;color:var(--ink);font:inherit;font-size:14px;padding:9px 12px;border-radius:8px;cursor:pointer;min-height:0}
+.rowmenu button:hover,.rowmenu button:focus-visible{background:var(--accent-soft)}
+.rowmenu hr{border:0;border-top:1px solid var(--line);margin:4px 0}
 .names li.drop-in{background:var(--accent-soft);box-shadow:inset 0 0 0 2px var(--accent);border-radius:6px}
 .grip{flex:none;width:20px;height:32px;border:0;background:none;padding:0;display:grid;place-items:center;color:var(--faint);cursor:grab;touch-action:none}
 .grip:hover{color:var(--ink)}
@@ -767,48 +773,50 @@ function wireGrips() {
       if (e.button > 0) return;
       e.preventDefault();
       const rows = [...names.querySelectorAll('li')], li = g.closest('li'), i = rows.indexOf(li);
-      const R = { id: g.dataset.grip, i, to: i, y0: e.clientY, x0: e.clientX, dx: 0, rows, li };
+      const R = { id: g.dataset.grip, i, y0: e.clientY, x0: e.clientX, dx: 0, rows, li, at: null };
       g.setPointerCapture(e.pointerId);
-      li.classList.add('lifted'); names.classList.add('sorting');
+      li.classList.add('lifted');
+      // Only the lifted row moves; a line (or a lit-up group) shows where it will land
       g.onpointermove = ev => {
-        const dy = clamp(ev.clientY - R.y0, -i * ROW, (rows.length - 1 - i) * ROW);
-        R.to = clamp(i + Math.round(dy / ROW), 0, rows.length - 1);
+        const dy = clamp(ev.clientY - R.y0, -i * ROW - ROW / 2, (rows.length - 1 - i) * ROW + ROW / 2);
         R.dx = ev.clientX - R.x0;
-        // Held over the middle of a group's row: it goes into that group, which lights up behind it, and nothing slides
-        const at = i + dy / ROW, k = Math.round(at), over = G.tasks[k];
-        R.into = k !== i && Math.abs(at - k) < .3 && over?.group && over.id !== R.id && !inside(over.id, R.id) ? over.id : null;
-        li.style.transform = `translate(${R.into ? 28 : clamp(R.dx, -48, 0)}px,${dy}px)`;
-        const band = $('#dropBand');
-        if (band) { band.setAttribute('visibility', R.into ? 'visible' : 'hidden'); band.setAttribute('y', HEAD + k * ROW); }
-        rows.forEach((r, n) => {
-          r.classList.toggle('drop-in', !!R.into && n === k);
-          if (r !== li) r.style.transform = R.into ? '' : n > i && n <= R.to ? `translateY(${-ROW}px)` : n < i && n >= R.to ? `translateY(${ROW}px)` : '';
-        });
+        li.style.transform = `translate(${clamp(R.dx, -48, 0)}px,${dy}px)`;
+        R.at = dropTarget(R, i * ROW + ROW / 2 + dy, R.at);
+        showDrop(R);
       };
       g.onpointerup = g.onpointercancel = ev => {
         g.onpointermove = g.onpointerup = g.onpointercancel = null;
-        names.classList.remove('sorting');
+        R.at = ev.type === 'pointerup' ? R.at : null;
         rows.forEach(r => { r.style.transform = ''; r.classList.remove('lifted', 'drop-in'); });
-        $('#dropBand')?.setAttribute('visibility', 'hidden');
-        if (ev.type === 'pointerup' && !dropRow(R)) render();
+        showDrop(null);
+        if (!dropRow(R)) render();
       };
     };
   });
 }
-/* Where a dragged row lands. Dropped onto a group's row, it goes in at the end of that group. Otherwise it goes
-   after the row it was dropped below: into that row if it's an open group, otherwise next to it. Dragging left as well takes it out one level per 30px. */
-function dropRow(R) {
-  const vis = G.tasks, i = R.i, id = R.id;
-  if (R.into) {
-    const g = findTask(R.into);
-    if (g.collapsed) { g.collapsed = false; touch(g); }
-    if (placeTask(id, g.id, (treeOf(mine()).kids.get(g.id) || []).length)) return toast(`Moved into ${g.name || 'the group'}`), true;
-    return false;
-  }
-  if (R.to === i && R.dx > -30) return false;
-  let above = R.to > i ? vis[R.to] : R.to === i ? vis[i - 1] : vis[R.to - 1];
-  if (above && (above.id === id || inside(above.id, id))) return false;
+/* What a dragged row is over, from the middle of the lifted row (py, in pixels from the first row's top):
+   { into } over the middle half of a group's row, otherwise { gap }, the line between rows gap - 1 and gap.
+   A target holds until the pointer is clearly past it, so small movements don't make it flicker. */
+function dropTarget(R, py, cur) {
+  const n = G.tasks.length, k = clamp(Math.floor(py / ROW), 0, n - 1), f = py - k * ROW, over = G.tasks[k];
+  const can = over.group && k !== R.i && !inside(over.id, R.id);
+  if (cur?.into === over.id && f > 5 && f < ROW - 5) return cur;
+  if (can && f > ROW * .25 && f < ROW * .75) return { into: over.id, k };
+  if (cur && 'gap' in cur && Math.abs(py - cur.gap * ROW) < ROW / 2 + 6) return cur;
+  return { gap: clamp(Math.round(py / ROW), 0, n) };
+}
+/* Where the row would land, as { parent, index }, or null if it would stay put. Below an open group's row it goes
+   in first; otherwise it goes next to the row above. Dragging left as well takes it out one level per 30px. */
+function landing(R) {
+  const t = R.at, vis = G.tasks, i = R.i, id = R.id;
+  const sibs = p => (treeOf(mine()).kids.get(p) || []).filter(x => x.id !== id);
+  if (!t) return null;
+  if (t.into) return { parent: t.into, index: sibs(t.into).length, into: true };
+  const still = t.gap === i || t.gap === i + 1;
   let out = R.dx < -30 ? Math.min(3, Math.floor(-R.dx / 30)) : 0, parent, anchor;
+  if (still && !out) return null;
+  const above = still ? vis[i - 1] : vis[t.gap - 1];
+  if (above && (above.id === id || inside(above.id, id))) return null;
   if (!above) { parent = null; anchor = null; }
   else if (above.group && !above.collapsed && !out) { parent = above.id; anchor = null; }
   else {
@@ -816,11 +824,65 @@ function dropRow(R) {
     if (above.group && !above.collapsed) out--;
     while (out-- > 0 && parent) { anchor = findTask(parent); parent = anchor.parent ?? null; }
   }
-  const sibs = (treeOf(mine()).kids.get(parent) || []).filter(x => x.id !== id);
-  return placeTask(id, parent, anchor ? sibs.indexOf(anchor) + 1 : 0);
+  const t0 = findTask(id), index = anchor ? sibs(parent).indexOf(anchor) + 1 : 0;
+  if ((t0.parent ?? null) === parent && treeOf(mine()).kids.get(parent).indexOf(t0) === index) return null;
+  return { parent, index };
+}
+/* The drop line in the names column (indented to the level the row would land at) and across the chart, or the
+   lit-up group it would go into. showDrop(null) clears them. */
+function showDrop(R) {
+  const names = $('#names'), band = $('#dropBand'), L = R && landing(R), t = R?.at;
+  let line = names.querySelector('.drop-line');
+  names.querySelectorAll('li').forEach((r, n) => r.classList.toggle('drop-in', !!(L?.into && n === t.k)));
+  if (!L || L.into) { line?.remove(); }
+  else {
+    if (!line) { line = document.createElement('div'); line.className = 'drop-line'; names.appendChild(line); }
+    const lis = names.querySelectorAll('li'), y = t.gap < lis.length ? lis[t.gap].offsetTop : lis[lis.length - 1].offsetTop + ROW;
+    line.style.top = y + 'px';
+    line.style.left = 30 + (L.parent ? G.plan.T.depth.get(L.parent) + 1 : 0) * 14 + 'px';
+  }
+  if (!band) return;
+  band.setAttribute('visibility', L ? 'visible' : 'hidden');
+  if (L?.into) { band.setAttribute('y', HEAD + t.k * ROW); band.setAttribute('height', ROW); band.setAttribute('stroke-width', 2); band.style.fill = 'var(--accent-soft)'; }
+  else if (L) { band.setAttribute('y', HEAD + t.gap * ROW - 1.5); band.setAttribute('height', 3); band.setAttribute('stroke-width', 0); band.style.fill = 'var(--accent)'; }
+}
+function dropRow(R) {
+  const L = landing(R);
+  if (!L) return false;
+  const g = L.into && findTask(L.parent);
+  if (g?.collapsed) { g.collapsed = false; touch(g); }
+  if (!placeTask(R.id, L.parent, L.index)) return false;
+  if (g) toast(`Moved into ${g.name || 'the group'}`);
+  return true;
 }
 function wireGantt() {
   wireGrips();
+  // The row menu: right-click on a row or a bar, the context menu key, or a long press on a row's name
+  const names = $('#names');
+  names.querySelectorAll('li').forEach((li, n) => {
+    const id = G.tasks[n].id;
+    let press = null, opened = 0;   // a long press opens the menu once, and the touch's own click and context menu are ignored
+    li.oncontextmenu = e => {
+      e.preventDefault();
+      if (Date.now() - opened < 1500) return;
+      const r = e.clientX || e.clientY ? null : li.getBoundingClientRect();
+      rowMenu(id, r ? r.left + 40 : e.clientX, r ? r.bottom : e.clientY);
+    };
+    li.onpointerdown = e => {
+      if (e.pointerType === 'mouse' || e.target.closest('.grip')) return;
+      const x0 = e.clientX, y0 = e.clientY;
+      press = setTimeout(() => { opened = Date.now(); rowMenu(id, x0, y0); }, 500);
+      li.onpointermove = ev => { if (Math.hypot(ev.clientX - x0, ev.clientY - y0) > 8) clearTimeout(press); };
+      li.onpointerup = li.onpointercancel = () => { clearTimeout(press); li.onpointermove = li.onpointerup = li.onpointercancel = null; };
+    };
+    li.addEventListener('click', e => { if (Date.now() - opened < 1500) { e.stopPropagation(); e.preventDefault(); } }, true);
+  });
+  $('#chart').oncontextmenu = e => {
+    const b = e.target.closest('.bar[data-id]');
+    if (!b) return;
+    e.preventDefault();
+    rowMenu(b.dataset.id, e.clientX, e.clientY);
+  };
   $('#names').querySelectorAll('[data-fold]').forEach(b => b.onclick = () => {
     const g = findTask(b.dataset.fold);
     g.collapsed = !g.collapsed; touch(g); changed();
@@ -938,7 +1000,8 @@ function wireDelete(btn, label, onDelete) {
   };
 }
 
-function newTask(milestone, group) {
+/* A new task, milestone or group, at the end of the top level, or at `at` ({ parent, index }) */
+function newTask(milestone, group, at) {
   const p = cur(), tasks = mine();
   const last = tasks[tasks.length - 1];
   const t = {
@@ -948,8 +1011,51 @@ function newTask(milestone, group) {
   };
   // A new task waits for nothing; links are only ever added by the person
   doc.tasks.push(t);
+  if (at) {
+    const g = findTask(at.parent);
+    if (g?.collapsed) { g.collapsed = false; touch(g); }
+    placeTask(t.id, at.parent ?? null, at.index ?? Infinity);
+  }
   changed();
   editTask(t.id, true);
+}
+/* The row menu (right-click, the context menu key, or a long press on a row's name): add things inside a group or
+   after a task, edit, fold */
+function rowMenu(id, x, y) {
+  const t = findTask(id);
+  if (!t) return;
+  closeMenu();
+  const T = treeOf(mine()), sibs = T.kids.get(t.parent ?? null), name = esc(t.name || (t.group ? 'Untitled group' : 'Untitled'));
+  const inG = { parent: t.id }, after = { parent: t.parent ?? null, index: sibs.indexOf(t) + 1 };
+  const items = t.group
+    ? [['Add task in ' + name, () => newTask(false, false, inG)], ['Add milestone in ' + name, () => newTask(true, false, inG)], ['Add group in ' + name, () => newTask(false, true, inG)], null,
+       [t.collapsed ? 'Show what’s in it' : 'Hide what’s in it', () => { t.collapsed = !t.collapsed; touch(t); changed(); }], ['Edit group', () => editTask(t.id)]]
+    : [['Add task below', () => newTask(false, false, after)], ['Add milestone below', () => newTask(true, false, after)], null, ['Edit', () => editTask(t.id)]];
+  const m = document.createElement('div');
+  m.className = 'rowmenu'; m.setAttribute('role', 'menu'); m.setAttribute('aria-label', t.name || 'Row');
+  m.innerHTML = items.map((it, k) => it ? `<button type="button" role="menuitem" data-k="${k}">${it[0]}</button>` : '<hr>').join('');
+  document.body.appendChild(m);
+  m.style.left = Math.max(8, Math.min(x, innerWidth - m.offsetWidth - 8)) + 'px';
+  m.style.top = Math.max(8, Math.min(y, innerHeight - m.offsetHeight - 8)) + 'px';
+  const btns = [...m.querySelectorAll('button')];
+  m.onclick = e => { const b = e.target.closest('button'); if (!b) return; closeMenu(); items[b.dataset.k][1](); };
+  m.onkeydown = e => {
+    const k = btns.indexOf(document.activeElement);
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); btns[(k + (e.key === 'ArrowDown' ? 1 : btns.length - 1)) % btns.length].focus(); }
+    if (e.key === 'Escape' || e.key === 'Tab') { e.preventDefault(); closeMenu(true); }
+  };
+  menuFrom = document.activeElement;
+  btns[0].focus();
+  setTimeout(() => addEventListener('pointerdown', menuAway, true));
+}
+let menuFrom = null;
+function menuAway(e) { if (!e.target.closest('.rowmenu')) closeMenu(); }
+function closeMenu(refocus) {
+  removeEventListener('pointerdown', menuAway, true);
+  const m = $('.rowmenu');
+  if (!m) return;
+  m.remove();
+  if (refocus && menuFrom?.isConnected) menuFrom.focus();
 }
 /* The "In group" picker: every group but this one and the groups inside it */
 function groupPicker(t) {
