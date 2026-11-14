@@ -236,6 +236,13 @@ main[data-kind="board"] .tl-only{display:none}
 .card-name{font-weight:600;overflow-wrap:anywhere}
 .card.done .card-name{text-decoration:line-through;color:var(--muted)}
 .card-meta{font-size:12.5px;color:var(--muted)}
+.card-top{display:flex;gap:6px;align-items:flex-start;justify-content:space-between}
+.urg{flex:none;font-size:11px;font-weight:700;letter-spacing:.03em;border-radius:999px;padding:1px 8px;margin-top:2px;border:1px solid var(--line);color:var(--muted);background:var(--surface)}
+.urg-high{border-color:var(--c-amber);color:var(--c-amber)}
+.urg-urgent{border-color:var(--danger);background:var(--danger);color:#fff}
+.card.urgent{box-shadow:inset 0 0 0 1px var(--danger)}
+.col header .chip{margin-left:auto;padding:2px 9px;font-size:12px}
+.seg.urg-seg button[data-urg="urgent"][aria-pressed="true"]{background:var(--danger);color:#fff}
 .card-meta .late{color:var(--danger);font-weight:600}
 .card .meter{height:5px;margin-top:3px}
 .card.lifted{position:fixed;z-index:30;pointer-events:none;box-shadow:0 10px 26px rgba(0,0,0,.22);transform:rotate(1.5deg);opacity:.95;cursor:grabbing}
@@ -371,7 +378,7 @@ function upgrade(d) {
     if (parked.length && !d.projects.some(x => x.id === p.id + '-board')) d.projects.push({ ...blankProject((p.name || 'Untitled') + ' board', 'board'), id: p.id + '-board' });
     parked.forEach(t => { t.project = p.id + '-board'; t.parent = null; t.deps = []; t.u = now(); });
   }
-  d.projects.forEach(p => { p.kind = p.kind === 'board' ? 'board' : 'timeline'; p.workdays ??= false; if (isNaN(dn(p.start))) p.start = ds(today()); });
+  d.projects.forEach(p => { p.kind = p.kind === 'board' ? 'board' : 'timeline'; p.urgentFirst = !!p.urgentFirst; p.workdays ??= false; if (isNaN(dn(p.start))) p.start = ds(today()); });
   const kindOf = new Map(d.projects.map(p => [p.id, p.kind]));
   d.tasks.forEach((t, i) => {
     t.order ??= i; t.duration = Math.max(0, Math.round(+t.duration || 0)); t.progress = clamp(Math.round(+t.progress || 0), 0, 100);
@@ -379,6 +386,7 @@ function upgrade(d) {
     t.color = COLORS.includes(t.color) ? t.color : 'teal';
     t.group = !!t.group; t.collapsed = !!t.collapsed; t.parent ??= null;
     t.backlog = !!t.backlog && !t.group && kindOf.get(t.project) === 'board'; t.doing = !!t.doing && !t.group;
+    t.urgency = ['low', 'high', 'urgent'].includes(t.urgency) ? t.urgency : '';
     if (t.group) { t.deps = []; t.duration = 0; }
   });
   // A task's parent must be a group in the same project, and following parents must never come back round
@@ -1234,6 +1242,18 @@ function editTask(id, isNew) {
    with no dates in use, in four columns. A card's column comes from its fields (colOf): `backlog`, progress 100 for
    Done, and Doing for any progress or the `doing` flag. `rank` orders the cards within a column. */
 const COLS = ['backlog', 'todo', 'doing', 'done'];
+/* A card's urgency tag, least to most urgent. With the board's `urgentFirst` on, the backlog lists the most urgent first. */
+const URGENCY = ['', 'low', 'high', 'urgent'];
+const URG_NAMES = { '': 'None', low: 'Low', high: 'High', urgent: 'Urgent' };
+const colCards = col => {
+  const list = boardCards().filter(t => colOf(t) === col);
+  return col === 'backlog' && cur().urgentFirst ? list.sort((a, b) => URGENCY.indexOf(b.urgency) - URGENCY.indexOf(a.urgency) || a.rank - b.rank) : list;
+};
+function setUrgency(t, u) {
+  if (t.urgency === u) return;
+  t.urgency = u; touch(t); changed();
+  $('#live').textContent = `${t.name || 'Card'}: ${u ? URG_NAMES[u] : 'no urgency'}`;
+}
 const COL_NAMES = { backlog: 'Backlog', todo: 'To do', doing: 'Doing', done: 'Done' };
 const colOf = t => t.backlog ? 'backlog' : isDone(t) ? 'done' : t.progress > 0 || t.doing ? 'doing' : 'todo';
 function setCol(t, col) {
@@ -1246,11 +1266,12 @@ function setCol(t, col) {
 }
 const boardCards = () => treeOf(mine()).leaves.slice().sort((a, b) => a.rank - b.rank);
 function renderBoard(p) {
-  const cards = boardCards(), focus = document.activeElement?.dataset?.card;
+  const focus = document.activeElement?.dataset?.card;
   const hint = { backlog: 'Ideas and things for later.', todo: '', doing: '', done: '' };
   $('#board').innerHTML = COLS.map(c => {
-    const list = cards.filter(t => colOf(t) === c);
-    return `<div class="col" data-col="${c}"><header><h3 id="col-${c}">${COL_NAMES[c]}</h3><span class="count">${list.length}</span></header>
+    const list = colCards(c);
+    const sorter = c === 'backlog' ? `<button class="chip" type="button" id="urgentFirst" aria-pressed="${!!p.urgentFirst}" title="List the backlog by urgency">Urgent first</button>` : '';
+    return `<div class="col" data-col="${c}"><header><h3 id="col-${c}">${COL_NAMES[c]}</h3><span class="count">${list.length}</span>${sorter}</header>
       ${hint[c] && !list.length ? `<p class="hint">${hint[c]}</p>` : ''}
       <ol class="cards" aria-labelledby="col-${c}">${list.map(cardHtml).join('')}</ol>
       <form class="add-card" data-add="${c}" onsubmit="return false"><label class="sr-only" for="add-${c}">Add a card to ${COL_NAMES[c]}</label><input id="add-${c}" type="text" placeholder="+ Add a card" autocomplete="off" enterkeyhint="done"></form></div>`;
@@ -1261,14 +1282,15 @@ function renderBoard(p) {
 function cardHtml(t) {
   const note = (t.notes || '').trim().split('\n')[0], meta = note ? [esc(note.length > 90 ? note.slice(0, 88) + '…' : note)] : [];
   if (colOf(t) === 'doing' && t.progress) meta.push(t.progress + '%');
-  return `<li class="card${isDone(t) ? ' done' : ''}" data-card="${esc(t.id)}" tabindex="0" style="--sw:var(--c-${t.color})" aria-label="${esc(t.name || 'Untitled')}. Enter to edit; left and right arrows move it between columns, up and down within one">
+  const tag = t.urgency ? `<span class="urg urg-${t.urgency}">${URG_NAMES[t.urgency]}</span>` : '';
+  return `<li class="card${isDone(t) ? ' done' : ''}${t.urgency === 'urgent' && !isDone(t) ? ' urgent' : ''}" data-card="${esc(t.id)}" tabindex="0" style="--sw:var(--c-${t.color})" aria-label="${esc(t.name || 'Untitled')}${t.urgency ? `, ${URG_NAMES[t.urgency]}` : ''}. Enter to edit; left and right arrows move it between columns, up and down within one; 0 to 3 set its urgency">
     <span class="grip" aria-hidden="true"><svg viewBox="0 0 10 16" fill="currentColor"><circle cx="2.5" cy="3" r="1.5"/><circle cx="7.5" cy="3" r="1.5"/><circle cx="2.5" cy="8" r="1.5"/><circle cx="7.5" cy="8" r="1.5"/><circle cx="2.5" cy="13" r="1.5"/><circle cx="7.5" cy="13" r="1.5"/></svg></span>
-    <div class="card-body"><span class="card-name">${esc(t.name || 'Untitled')}</span>${meta.length ? `<span class="card-meta">${meta.join(' · ')}</span>` : ''}
+    <div class="card-body"><span class="card-top"><span class="card-name">${esc(t.name || 'Untitled')}</span>${tag}</span>${meta.length ? `<span class="card-meta">${meta.join(' · ')}</span>` : ''}
     ${colOf(t) === 'doing' && t.progress ? `<div class="meter"><i style="width:${t.progress}%"></i></div>` : ''}</div></li>`;
 }
 /* Puts card `id` in column `col` at position `index` among that column's other cards */
 function placeCard(id, col, index) {
-  const t = findTask(id), list = boardCards().filter(x => colOf(x) === col && x.id !== id);
+  const t = findTask(id), list = colCards(col).filter(x => x.id !== id);
   const from = colOf(t);
   list.splice(clamp(index, 0, list.length), 0, t);
   setCol(t, col);
@@ -1283,7 +1305,7 @@ function addCard(col, name) {
   const t = {
     id: uid(), project: p.id, name, start: ds(Math.max(dn(p.start), today())), duration: 1, progress: 0, deps: [], color: tasks.length ? tasks[tasks.length - 1].color : 'teal',
     notes: '', order: tasks.length ? Math.max(...tasks.map(x => x.order)) + 1 : 0, parent: null, group: false, collapsed: false,
-    backlog: false, doing: false, rank: tasks.length ? Math.max(...tasks.map(x => x.rank)) + 1 : 0, u: now()
+    backlog: false, doing: false, urgency: '', rank: tasks.length ? Math.max(...tasks.map(x => x.rank)) + 1 : 0, u: now()
   };
   setCol(t, col);
   doc.tasks.push(t);
@@ -1291,6 +1313,7 @@ function addCard(col, name) {
 }
 function wireBoard() {
   const b = $('#board');
+  b.querySelector('#urgentFirst').onclick = () => { const p = cur(); p.urgentFirst = !p.urgentFirst; touch(p); changed(); };
   b.querySelectorAll('[data-add]').forEach(f => {
     const inp = f.querySelector('input');
     inp.onkeydown = e => {
@@ -1305,11 +1328,12 @@ function wireBoard() {
     const id = c.dataset.card;
     c.onkeydown = e => {
       if (e.target !== c) return;
-      const t = findTask(id), col = colOf(t), list = boardCards().filter(x => colOf(x) === col), i = list.indexOf(t);
+      const t = findTask(id), col = colOf(t), list = colCards(col), i = list.indexOf(t);
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); return editTask(id); }
       const k = COLS.indexOf(col);
       const go = { ArrowLeft: () => k > 0 && placeCard(id, COLS[k - 1], Infinity), ArrowRight: () => k < 3 && placeCard(id, COLS[k + 1], Infinity),
-        ArrowUp: () => i > 0 && placeCard(id, col, i - 1), ArrowDown: () => i < list.length - 1 && placeCard(id, col, i + 1) }[e.key];
+        ArrowUp: () => i > 0 && placeCard(id, col, i - 1), ArrowDown: () => i < list.length - 1 && placeCard(id, col, i + 1),
+        0: () => setUrgency(t, ''), 1: () => setUrgency(t, 'low'), 2: () => setUrgency(t, 'high'), 3: () => setUrgency(t, 'urgent') }[e.key];
       if (!go) return;
       e.preventDefault(); go();
       $(`[data-card="${CSS.escape(id)}"]`)?.focus();
@@ -1366,7 +1390,8 @@ function cardDown(e, c) {
 function cardMenu(id, x, y) {
   const t = findTask(id), k = COLS.indexOf(colOf(t));
   closeMenu();
-  const items = [...COLS.filter(c => c !== colOf(t)).map(c => ['Move to ' + COL_NAMES[c], () => placeCard(id, c, Infinity)]), null, ['Edit', () => editTask(id)]];
+  const items = [...COLS.filter(c => c !== colOf(t)).map(c => ['Move to ' + COL_NAMES[c], () => placeCard(id, c, Infinity)]), null,
+    ...URGENCY.slice(1).reverse().filter(u => u !== t.urgency).map(u => ['Mark ' + URG_NAMES[u].toLowerCase(), () => setUrgency(t, u)]), ...(t.urgency ? [['Clear urgency', () => setUrgency(t, '')]] : []), null, ['Edit', () => editTask(id)]];
   const m = document.createElement('div');
   m.className = 'rowmenu'; m.setAttribute('role', 'menu'); m.setAttribute('aria-label', t.name || 'Card');
   m.innerHTML = items.map((it, i) => it ? `<button type="button" role="menuitem" data-k="${i}">${it[0]}</button>` : '<hr>').join('');
@@ -1387,6 +1412,7 @@ function cardMenu(id, x, y) {
 function editCard(t, isNew) {
   openDrawer(isNew ? 'New card' : (t.name || 'Card'), `
     <label class="field">Name<input type="text" id="tName" value="${esc(t.name)}" autocomplete="off"></label>
+    <div class="field">Urgency<div class="seg urg-seg" role="group" aria-label="Urgency">${URGENCY.map(u => `<button type="button" data-urg="${u}" aria-pressed="${t.urgency === u}">${URG_NAMES[u]}</button>`).join('')}</div></div>
     <div class="field">Column<div class="seg" role="group" aria-label="Column" id="tCol">${COLS.map(c => `<button type="button" data-col="${c}" aria-pressed="${colOf(t) === c}">${COL_NAMES[c]}</button>`).join('')}</div></div>
     <div class="field">Color<div class="swatches" role="group" aria-label="Color">${COLORS.map(c => `<button type="button" class="swatch" style="--sw:var(--c-${c})" data-color="${c}" aria-label="${COLOR_NAMES[c]}" aria-pressed="${c === t.color}"></button>`).join('')}</div></div>
     <label class="field">Notes<textarea id="tNotes" rows="5">${esc(t.notes || '')}</textarea></label>
@@ -1398,6 +1424,10 @@ function editCard(t, isNew) {
     const upd = (fn, redraw = true) => { fn(); touch(t); save(); if (redraw) render(); };
     f.querySelector('#tName').oninput = e => upd(() => { t.name = e.target.value; });
     f.querySelector('#tName').onkeydown = e => { if (e.key === 'Enter') closeDrawer(); };
+    f.querySelectorAll('[data-urg]').forEach(b => b.onclick = () => {
+      setUrgency(t, b.dataset.urg);
+      f.querySelectorAll('[data-urg]').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+    });
     f.querySelectorAll('[data-col]').forEach(b => b.onclick = () => {
       placeCard(t.id, b.dataset.col, Infinity);
       f.querySelectorAll('[data-col]').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
