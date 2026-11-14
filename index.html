@@ -220,6 +220,31 @@ div.field > .note{font-size:13px;color:var(--muted)}
 .hero{display:flex;flex-direction:column;gap:12px;align-items:flex-start;padding:28px 20px}
 .hero p{max-width:60ch;color:var(--muted)}
 .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+/* Board */
+main[data-view="board"] .tl-only{display:none}
+.board{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(240px,1fr);gap:12px;overflow-x:auto;padding-bottom:6px;scroll-snap-type:x proximity;align-items:start}
+.col{background:var(--sunk);border-radius:var(--r);padding:10px;display:flex;flex-direction:column;gap:8px;scroll-snap-align:start;min-height:160px}
+.col>header{display:flex;align-items:baseline;gap:8px;padding:2px 4px}
+.col h3{margin:0;font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.col .count{font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
+.col .hint{font-size:12px;color:var(--muted);padding:0 4px;margin:-4px 0 0}
+.cards{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;min-height:8px;position:relative}
+.card{background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--sw);border-radius:10px;padding:9px 10px 9px 8px;display:flex;gap:6px;align-items:flex-start;cursor:grab;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.card:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.card .grip{flex:none;margin-top:1px}
+.card-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.card-name{font-weight:600;overflow-wrap:anywhere}
+.card.done .card-name{text-decoration:line-through;color:var(--muted)}
+.card-meta{font-size:12.5px;color:var(--muted)}
+.card-meta .late{color:var(--danger);font-weight:600}
+.card .meter{height:5px;margin-top:3px}
+.card.lifted{position:fixed;z-index:30;pointer-events:none;box-shadow:0 10px 26px rgba(0,0,0,.22);transform:rotate(1.5deg);opacity:.95;cursor:grabbing}
+.card.ghosted{opacity:.35}
+.card-drop{height:3px;border-radius:2px;background:var(--accent);margin:-5px 0}
+.col.over{box-shadow:inset 0 0 0 2px var(--accent)}
+.add-card input{width:100%;border:1px dashed var(--line);background:transparent;border-radius:10px;padding:8px 10px;font:inherit;font-size:14px;color:var(--ink)}
+.add-card input:focus{border-style:solid;background:var(--surface);outline:2px solid var(--accent);outline-offset:-1px}
+@media (max-width:720px){.board{grid-auto-columns:min(280px,82vw)}}
 @media (pointer:coarse){.btn{min-height:40px}.btn.sm{min-height:36px}.seg button{min-height:36px}.picker select{min-height:36px}}
 @media (max-width:520px){.toolbar .btn{flex:1 1 auto}.toolbar .grow{display:none}}
 </style>
@@ -243,31 +268,34 @@ div.field > .note{font-size:13px;color:var(--muted)}
 </header>
 <main class="wrap stack">
   <div class="toolbar">
-    <button class="btn primary" id="addTask" type="button">+ Task</button>
-    <button class="btn" id="addMilestone" type="button">+ Milestone</button>
-    <button class="btn" id="addGroup" type="button">+ Group</button>
+    <div class="seg" role="group" aria-label="View" id="viewSeg"><button type="button" data-view="timeline">Timeline</button><button type="button" data-view="board">Board</button></div>
+    <button class="btn primary tl-only" id="addTask" type="button">+ Task</button>
+    <button class="btn tl-only" id="addMilestone" type="button">+ Milestone</button>
+    <button class="btn tl-only" id="addGroup" type="button">+ Group</button>
     <span class="grow"></span>
-    <div class="seg" role="group" aria-label="Zoom" id="zoom">
+    <div class="seg tl-only" role="group" aria-label="Zoom" id="zoom">
       <button type="button" id="zoomOut" aria-label="Zoom out">−</button>
       <button type="button" id="zoomFit" title="Show the whole project">Fit</button>
       <button type="button" id="zoomIn" aria-label="Zoom in">+</button>
     </div>
-    <label class="sr-only" for="zoomPick">Time scale</label>
-    <select id="zoomPick" class="zoom-pick"></select>
-    <button class="chip" id="critBtn" type="button" aria-pressed="false" title="Tasks that would push the finish date back if they slipped">Critical path</button>
+    <label class="sr-only tl-only" for="zoomPick">Time scale</label>
+    <select id="zoomPick" class="zoom-pick tl-only"></select>
+    <button class="chip tl-only" id="critBtn" type="button" aria-pressed="false" title="Tasks that would push the finish date back if they slipped">Critical path</button>
     <button class="btn ghost" id="settingsBtn" type="button">Settings</button>
   </div>
 
   <section class="panel hero" id="empty" hidden>
     <h2>Plan it, link it, tick it off</h2>
     <p>Add the tasks in your project with how long each one takes. Link a task to the ones it has to wait for and it moves to start after them, so the chart always shows when things can really happen. Mark progress as you go and see how far along the whole project is.</p>
-    <button class="btn primary big" id="emptyAdd" type="button">Add the first task</button>
+    <div class="row"><button class="btn primary big" id="emptyAdd" type="button">Add the first task</button><button class="btn big" id="emptyBoard" type="button">Start with a board</button></div>
+    <p class="small" id="emptyNote" hidden></p>
     <p class="small">Everything stays in this browser, with optional Google Drive sync in Settings.</p>
   </section>
 
   <section class="panel" id="stats" hidden></section>
   <section class="panel gantt" id="gantt" hidden></section>
   <section class="panel stack" id="list" hidden></section>
+  <section class="board" id="board" aria-label="Board" hidden></section>
   <p class="sr-only" id="live" aria-live="polite"></p>
 </main>
 <div id="layer"></div>
@@ -321,7 +349,7 @@ const showDay = n => (asDate(n).getUTCFullYear() === asDate(today()).getUTCFullY
 
 /* ---------- Document ---------- */
 function blankProject(name) {
-  return { id: uid(), name: name || 'My project', start: ds(today()), workdays: false, u: now() };
+  return { id: uid(), name: name || 'My project', start: ds(today()), workdays: false, view: 'timeline', u: now() };
 }
 function blankDoc() {
   return { version: 1, settings: { zoom: 'day', critical: false, updatedAt: now() }, projects: [blankProject()], tasks: [], deleted: [] };
@@ -333,12 +361,13 @@ function upgrade(d) {
   if (!ZOOM[d.settings.zoom] && d.settings.zoom !== 'fit') d.settings.zoom = 'day';
   for (const k of ['projects', 'tasks', 'deleted']) if (!Array.isArray(d[k])) d[k] = [];
   if (!d.projects.length) d.projects = b.projects;
-  d.projects.forEach(p => { p.workdays ??= false; if (isNaN(dn(p.start))) p.start = ds(today()); });
+  d.projects.forEach(p => { p.workdays ??= false; p.view = p.view === 'board' ? 'board' : 'timeline'; if (isNaN(dn(p.start))) p.start = ds(today()); });
   d.tasks.forEach((t, i) => {
     t.order ??= i; t.duration = Math.max(0, Math.round(+t.duration || 0)); t.progress = clamp(Math.round(+t.progress || 0), 0, 100);
     t.deps = Array.isArray(t.deps) ? t.deps.filter(x => x && x.id) : [];
     t.color = COLORS.includes(t.color) ? t.color : 'teal';
     t.group = !!t.group; t.collapsed = !!t.collapsed; t.parent ??= null;
+    t.backlog = !!t.backlog && !t.group; t.doing = !!t.doing && !t.group; t.rank = Number.isFinite(t.rank) ? t.rank : t.order;
     if (t.group) { t.deps = []; t.duration = 0; }
   });
   // A task's parent must be a group in the same project, and following parents must never come back round
@@ -359,6 +388,7 @@ let curId = lsGet(CUR_KEY);
 const cur = () => doc.projects.find(p => p.id === curId) || (curId = doc.projects[0].id, doc.projects[0]);
 const mine = () => doc.tasks.filter(t => t.project === cur().id).sort((a, b) => a.order - b.order);
 const findTask = id => doc.tasks.find(t => t.id === id);
+const onPlan = () => mine().filter(t => !t.backlog);   // what the timeline shows: everything but the backlog
 const touch = r => { r.u = now(); };
 const touchSettings = () => { doc.settings.updatedAt = now(); };
 let saveTimer;
@@ -516,17 +546,24 @@ const durText = (t, p) => t.duration === 0 ? 'Milestone' : `${t.duration} ${p.wo
 /* ---------- Rendering ---------- */
 let sel = null, selDep = null;   // selected task id; selected link as "from>to"
 function render() {
-  const p = cur(), tasks = mine(), plan = schedule(p, tasks);
+  const p = cur(), tasks = onPlan(), plan = schedule(p, tasks), board = p.view === 'board';
   renderPicker();
-  $('#empty').hidden = tasks.length > 0;
-  for (const id of ['#stats', '#gantt', '#list']) $(id).hidden = !tasks.length;
+  $('main').dataset.view = p.view;
+  document.querySelectorAll('#viewSeg [data-view]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.view === p.view)));
+  $('#board').hidden = !board;
+  if (board) renderBoard(p);
+  $('#empty').hidden = board || tasks.length > 0;
+  const parked = mine().filter(t => t.backlog).length;
+  $('#emptyNote').hidden = !parked;
+  $('#emptyNote').textContent = `${parked} card${parked === 1 ? ' is' : 's are'} in the backlog on the Board. Move ${parked === 1 ? 'it' : 'them'} to To do to put ${parked === 1 ? 'it' : 'them'} on the timeline.`;
+  for (const id of ['#stats', '#gantt', '#list']) $(id).hidden = board || !tasks.length;
   const z = doc.settings.zoom;
   $('#zoomFit').setAttribute('aria-pressed', String(z === 'fit'));
   $('#zoomPick').innerHTML = [...ZOOM_ORDER, ...(z === 'fit' ? ['fit'] : [])].map(k => `<option value="${k}"${k === z ? ' selected' : ''}>${ZOOM_NAMES[k]}</option>`).join('');
   $('#zoomIn').disabled = z === 'day';
   $('#zoomOut').disabled = z === 'year';
   $('#critBtn').setAttribute('aria-pressed', String(!!doc.settings.critical));
-  if (!tasks.length) return;
+  if (board || !tasks.length) return;
   renderStats(p, plan);
   renderGantt(p, tasks, plan);
   renderList(p, tasks, plan);
@@ -738,12 +775,14 @@ function placeTask(id, parent, index) {
 }
 /* Up or down one place among the task's siblings */
 function moveTask(id, dir) {
-  const t = findTask(id), sibs = treeOf(mine()).kids.get(t.parent ?? null);
-  return placeTask(id, t.parent ?? null, sibs.indexOf(t) + dir);
+  const t = findTask(id), sibs = treeOf(mine()).kids.get(t.parent ?? null), vis = sibs.filter(x => !x.backlog || x === t);
+  const other = vis[vis.indexOf(t) + dir];
+  if (!other) return false;
+  return placeTask(id, t.parent ?? null, sibs.filter(x => x !== t).indexOf(other) + (dir > 0 ? 1 : 0));
 }
 /* Into the group just above it (as its last item), or out of its group (to just after it) */
 function nestTask(id, dir) {
-  const t = findTask(id), T = treeOf(mine()), sibs = T.kids.get(t.parent ?? null), i = sibs.indexOf(t);
+  const t = findTask(id), T = treeOf(mine()), sibs = T.kids.get(t.parent ?? null).filter(x => !x.backlog || x === t), i = sibs.indexOf(t);
   if (dir > 0) {
     const g = sibs[i - 1];
     if (!g || !g.group) return false;
@@ -949,7 +988,7 @@ function onUp(e) {
   }
   if (!d.moved || d.part === 'group') { sel = t.id; selDep = null; return editTask(t.id); }
   touch(t);
-  const r = schedule(G.p, mine()).S.get(t.id);
+  const r = schedule(G.p, onPlan()).S.get(t.id);
   if (d.part === 'body' && r.es > dn(t.start)) toast(`It can’t start before ${showDay(r.es)}: it waits for ${findTask(r.driver)?.name || 'another task'}.`, 4000);
   changed();
 }
@@ -1007,7 +1046,8 @@ function newTask(milestone, group, at) {
   const t = {
     id: uid(), project: p.id, name: '', start: ds(Math.max(dn(p.start), today())), duration: milestone || group ? 0 : 5, progress: 0,
     deps: [], color: last ? last.color : 'teal', notes: '', order: tasks.length ? Math.max(...tasks.map(x => x.order)) + 1 : 0,
-    parent: null, group: !!group, collapsed: false, u: now()
+    parent: null, group: !!group, collapsed: false, backlog: false, doing: false,
+    rank: tasks.length ? Math.max(...tasks.map(x => x.rank)) + 1 : 0, u: now()
   };
   // A new task waits for nothing; links are only ever added by the person
   doc.tasks.push(t);
@@ -1069,7 +1109,7 @@ function wireGroupPicker(f, t) {
   };
 }
 function editGroup(t, isNew) {
-  const plan = schedule(cur(), mine()), r = plan.S.get(t.id), n = plan.T.kids.get(t.id).length;
+  const plan = schedule(cur(), onPlan()), r = plan.S.get(t.id), n = plan.T.kids.get(t.id).length;
   openDrawer(isNew ? 'New group' : (t.name || 'Group'), `
     <label class="field">Name<input type="text" id="tName" value="${esc(t.name)}" placeholder="Week one" autocomplete="off"></label>
     <p class="note">${n ? `${n} item${n === 1 ? '' : 's'} · ${esc(whenText(t, r))} · ${r.progress}% done.` : 'Nothing in it yet.'} Drag a task by its handle onto the group to put it in, or pick the group in the task’s editor.</p>
@@ -1109,6 +1149,7 @@ function editTask(id, isNew) {
   const unit = p.workdays ? 'work days' : 'days';
   openDrawer(isNew ? (t.duration === 0 ? 'New milestone' : 'New task') : (t.name || 'Task'), `
     <label class="field">Name<input type="text" id="tName" value="${esc(t.name)}" placeholder="${t.duration === 0 ? 'Launch day' : 'Write the brief'}" autocomplete="off"></label>
+    <div class="field">Status<div class="seg" role="group" aria-label="Status" id="tCol">${COLS.map(c => `<button type="button" data-col="${c}" aria-pressed="${colOf(t) === c}">${COL_NAMES[c]}</button>`).join('')}</div></div>
     <label class="cb"><input type="checkbox" id="tMs"${t.duration === 0 ? ' checked' : ''}> Milestone (a single day, no duration)</label>
     <div class="inline">
       <label class="field">Earliest start<input type="date" id="tStart" value="${esc(t.start || p.start)}"></label>
@@ -1136,10 +1177,15 @@ function editTask(id, isNew) {
       <button class="btn danger" type="button" id="tDel">Delete</button>
     </div>`, f => {
     wireGroupPicker(f, t);
-    const upd = (fn, redraw = true) => { fn(); touch(t); save(); if (redraw) render(); when(); };
+    const upd = (fn, redraw = true) => { fn(); touch(t); save(); if (redraw) render(); when(); status(); };
+    const status = () => f.querySelectorAll('#tCol [data-col]').forEach(b => b.setAttribute('aria-pressed', String(colOf(t) === b.dataset.col)));
+    f.querySelectorAll('#tCol [data-col]').forEach(b => b.onclick = () => upd(() => {
+      setCol(t, b.dataset.col);
+      pct.value = t.progress; pctL.textContent = t.progress + '%'; done.checked = isDone(t);
+    }));
     const when = () => {
-      const pl = schedule(cur(), mine()), rr = pl.S.get(t.id);
-      if (!rr) return;
+      const pl = schedule(cur(), onPlan()), rr = pl.S.get(t.id);
+      if (!rr) return f.querySelector('#tWhen').textContent = 'It’s in the backlog, so it isn’t on the timeline yet. Move it to To do to schedule it.';
       const pushed = rr.es > calendar(cur()).snap(dn(t.start || cur().start));
       f.querySelector('#tWhen').innerHTML = `${t.duration === 0 ? 'On' : 'Runs'} <b>${esc(whenText(t, rr))}</b>${pushed && rr.driver ? `, after ${esc(findTask(rr.driver)?.name || 'another task')}` : ''}.${rr.slack ? ` It could slip ${rr.slack} day${rr.slack === 1 ? '' : 's'} without moving the finish.` : ' It’s on the critical path: if it slips, the project finishes later.'}`;
     };
@@ -1173,6 +1219,172 @@ function editTask(id, isNew) {
     wireDelete(f.querySelector('#tDel'), 'Tap again to delete', () => { removeTask(t.id); sel = null; changed(); toast('Task deleted'); });
     if (isNew) f.querySelector('#tName').focus();
   });
+}
+
+/* ---------- Board ----------
+   The same tasks as the timeline, as cards in four columns. A card's column comes from its fields (colOf): `backlog`
+   keeps it off the timeline, progress 100 is Done, and Doing is any progress or the `doing` flag. Groups aren't cards;
+   a card names its group. `rank` orders the cards within a column. */
+const COLS = ['backlog', 'todo', 'doing', 'done'];
+const COL_NAMES = { backlog: 'Backlog', todo: 'To do', doing: 'Doing', done: 'Done' };
+const colOf = t => t.backlog ? 'backlog' : isDone(t) ? 'done' : t.progress > 0 || t.doing ? 'doing' : 'todo';
+function setCol(t, col) {
+  const was = colOf(t);
+  if (was === col) return;
+  if (t.backlog && col !== 'backlog' && !(dn(t.start) >= today())) t.start = ds(Math.max(today(), dn(cur().start)));   // scheduled from today
+  t.backlog = col === 'backlog';
+  t.doing = col === 'doing';
+  if (col === 'done') t.progress = 100;
+  else if (col === 'todo' || was === 'done') t.progress = 0;
+}
+const boardCards = () => treeOf(mine()).leaves.slice().sort((a, b) => a.rank - b.rank);
+function renderBoard(p) {
+  const cards = boardCards(), plan = schedule(p, onPlan()), focus = document.activeElement?.dataset?.card;
+  const hint = { backlog: 'Things to plan later. They stay off the timeline until you move them to To do.', todo: '', doing: '', done: '' };
+  $('#board').innerHTML = COLS.map(c => {
+    const list = cards.filter(t => colOf(t) === c);
+    return `<div class="col" data-col="${c}"><header><h3 id="col-${c}">${COL_NAMES[c]}</h3><span class="count">${list.length}</span></header>
+      ${hint[c] && !list.length ? `<p class="hint">${hint[c]}</p>` : ''}
+      <ol class="cards" aria-labelledby="col-${c}">${list.map(t => cardHtml(t, plan)).join('')}</ol>
+      <form class="add-card" data-add="${c}" onsubmit="return false"><label class="sr-only" for="add-${c}">Add a card to ${COL_NAMES[c]}</label><input id="add-${c}" type="text" placeholder="+ Add a card" autocomplete="off" enterkeyhint="done"></form></div>`;
+  }).join('');
+  wireBoard();
+  if (focus) $(`[data-card="${CSS.escape(focus)}"]`)?.focus();
+}
+function cardHtml(t, plan) {
+  const r = plan.S.get(t.id), g = findTask(t.parent), late = r && isLate(t, plan), meta = [];
+  if (r) meta.push(esc(whenText(t, r)));
+  else if (t.duration === 0) meta.push('Milestone');
+  if (g) meta.push(esc(g.name || 'Untitled group'));
+  if (colOf(t) === 'doing' && t.progress) meta.push(t.progress + '%');
+  if (late) meta.push('<span class="late">overdue</span>');
+  return `<li class="card${isDone(t) ? ' done' : ''}" data-card="${esc(t.id)}" tabindex="0" style="--sw:var(--c-${t.color})" aria-label="${esc(t.name || 'Untitled')}. Enter to edit; left and right arrows move it between columns, up and down within one">
+    <span class="grip" aria-hidden="true"><svg viewBox="0 0 10 16" fill="currentColor"><circle cx="2.5" cy="3" r="1.5"/><circle cx="7.5" cy="3" r="1.5"/><circle cx="2.5" cy="8" r="1.5"/><circle cx="7.5" cy="8" r="1.5"/><circle cx="2.5" cy="13" r="1.5"/><circle cx="7.5" cy="13" r="1.5"/></svg></span>
+    <div class="card-body"><span class="card-name">${esc(t.name || 'Untitled')}</span>${meta.length ? `<span class="card-meta">${meta.join(' · ')}</span>` : ''}
+    ${colOf(t) === 'doing' && t.progress ? `<div class="meter"><i style="width:${t.progress}%"></i></div>` : ''}</div></li>`;
+}
+/* Puts card `id` in column `col` at position `index` among that column's other cards */
+function placeCard(id, col, index) {
+  const t = findTask(id), list = boardCards().filter(x => colOf(x) === col && x.id !== id);
+  const from = colOf(t);
+  list.splice(clamp(index, 0, list.length), 0, t);
+  setCol(t, col);
+  // Ranks are shared by every column: the card takes a rank between its new neighbours'
+  const k = list.indexOf(t), prev = list[k - 1], next = list[k + 1];
+  t.rank = prev && next ? (prev.rank + next.rank) / 2 : prev ? prev.rank + 1 : next ? next.rank - 1 : t.rank;
+  touch(t); changed();
+  $('#live').textContent = `${t.name || 'Card'}: ${COL_NAMES[col]}${from === col ? `, ${list.indexOf(t) + 1} of ${list.length}` : ''}`;
+}
+function addCard(col, name) {
+  const p = cur(), tasks = mine();
+  const t = {
+    id: uid(), project: p.id, name, start: ds(Math.max(dn(p.start), today())), duration: 1, progress: 0, deps: [], color: tasks.length ? tasks[tasks.length - 1].color : 'teal',
+    notes: '', order: tasks.length ? Math.max(...tasks.map(x => x.order)) + 1 : 0, parent: null, group: false, collapsed: false,
+    backlog: false, doing: false, rank: tasks.length ? Math.max(...tasks.map(x => x.rank)) + 1 : 0, u: now()
+  };
+  setCol(t, col);
+  doc.tasks.push(t);
+  changed();
+}
+function wireBoard() {
+  const b = $('#board');
+  b.querySelectorAll('[data-add]').forEach(f => {
+    const inp = f.querySelector('input');
+    inp.onkeydown = e => {
+      if (e.key === 'Escape') { inp.value = ''; inp.blur(); }
+      if (e.key !== 'Enter' || !inp.value.trim()) return;
+      e.preventDefault();
+      addCard(f.dataset.add, inp.value.trim());
+      $(`#add-${f.dataset.add}`).focus();   // stays ready for the next one
+    };
+  });
+  b.querySelectorAll('[data-card]').forEach(c => {
+    const id = c.dataset.card;
+    c.onkeydown = e => {
+      if (e.target !== c) return;
+      const t = findTask(id), col = colOf(t), list = boardCards().filter(x => colOf(x) === col), i = list.indexOf(t);
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); return editTask(id); }
+      const k = COLS.indexOf(col);
+      const go = { ArrowLeft: () => k > 0 && placeCard(id, COLS[k - 1], Infinity), ArrowRight: () => k < 3 && placeCard(id, COLS[k + 1], Infinity),
+        ArrowUp: () => i > 0 && placeCard(id, col, i - 1), ArrowDown: () => i < list.length - 1 && placeCard(id, col, i + 1) }[e.key];
+      if (!go) return;
+      e.preventDefault(); go();
+      $(`[data-card="${CSS.escape(id)}"]`)?.focus();
+    };
+    c.oncontextmenu = e => { e.preventDefault(); cardMenu(id, e.clientX || c.getBoundingClientRect().left + 20, e.clientY || c.getBoundingClientRect().bottom); };
+    c.onpointerdown = e => cardDown(e, c);
+    c.onclick = () => { if (Date.now() - draggedAt > 300) editTask(id); };
+  });
+}
+/* Dragging a card: with a mouse from anywhere on it, with a finger from its handle (the rest of the card scrolls).
+   It follows the pointer, a line shows where it will land, and it drops on release. A click without a drag edits it. */
+let draggedAt = 0;
+function cardDown(e, c) {
+  if (e.button > 0) return;
+  const touchy = e.pointerType !== 'mouse';
+  if (touchy && !e.target.closest('.grip')) return;
+  e.preventDefault();
+  const id = c.dataset.card, x0 = e.clientX, y0 = e.clientY, box = c.getBoundingClientRect();
+  let D = null;
+  c.setPointerCapture(e.pointerId);
+  const line = document.createElement('li');
+  line.className = 'card-drop'; line.setAttribute('aria-hidden', 'true');
+  c.onpointermove = ev => {
+    if (!D) {
+      if (Math.hypot(ev.clientX - x0, ev.clientY - y0) < 5) return;
+      const ghost = c.cloneNode(true);
+      ghost.classList.add('lifted'); ghost.removeAttribute('tabindex'); ghost.style.width = box.width + 'px';
+      document.body.appendChild(ghost);
+      c.classList.add('ghosted');
+      D = { ghost, dx: x0 - box.left, dy: y0 - box.top, col: null, index: 0 };
+    }
+    D.ghost.style.left = ev.clientX - D.dx + 'px'; D.ghost.style.top = ev.clientY - D.dy + 'px';
+    const col = document.elementsFromPoint(ev.clientX, ev.clientY).map(el => el.closest?.('.col')).find(Boolean);
+    $('#board').querySelectorAll('.col').forEach(x => x.classList.toggle('over', x === col));
+    if (!col) { line.remove(); D.col = null; return; }
+    const ol = col.querySelector('.cards'), others = [...ol.querySelectorAll('.card')].filter(x => x !== c);
+    let index = others.findIndex(x => { const r = x.getBoundingClientRect(); return ev.clientY < r.top + r.height / 2; });
+    if (index < 0) index = others.length;
+    if (D.col !== col.dataset.col || D.index !== index) { D.col = col.dataset.col; D.index = index; ol.insertBefore(line, others[index] || null); }
+    // Near the left or right edge of a scrolling board, scroll it
+    const bb = $('#board'), br = bb.getBoundingClientRect();
+    if (ev.clientX > br.right - 30) bb.scrollLeft += 12; else if (ev.clientX < br.left + 30) bb.scrollLeft -= 12;
+  };
+  c.onpointerup = c.onpointercancel = ev => {
+    c.onpointermove = c.onpointerup = c.onpointercancel = null;
+    line.remove();
+    $('#board').querySelectorAll('.col.over').forEach(x => x.classList.remove('over'));
+    if (!D) return;
+    draggedAt = Date.now();
+    D.ghost.remove(); c.classList.remove('ghosted');
+    if (ev.type === 'pointerup' && D.col) placeCard(id, D.col, D.index); else render();
+  };
+}
+function cardMenu(id, x, y) {
+  const t = findTask(id), k = COLS.indexOf(colOf(t));
+  closeMenu();
+  const items = [...COLS.filter(c => c !== colOf(t)).map(c => ['Move to ' + COL_NAMES[c], () => placeCard(id, c, Infinity)]), null, ['Edit', () => editTask(id)]];
+  const m = document.createElement('div');
+  m.className = 'rowmenu'; m.setAttribute('role', 'menu'); m.setAttribute('aria-label', t.name || 'Card');
+  m.innerHTML = items.map((it, i) => it ? `<button type="button" role="menuitem" data-k="${i}">${it[0]}</button>` : '<hr>').join('');
+  document.body.appendChild(m);
+  m.style.left = Math.max(8, Math.min(x, innerWidth - m.offsetWidth - 8)) + 'px';
+  m.style.top = Math.max(8, Math.min(y, innerHeight - m.offsetHeight - 8)) + 'px';
+  const btns = [...m.querySelectorAll('button')];
+  m.onclick = e => { const b = e.target.closest('button'); if (!b) return; closeMenu(); items[b.dataset.k][1](); };
+  m.onkeydown = e => {
+    const i = btns.indexOf(document.activeElement);
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); btns[(i + (e.key === 'ArrowDown' ? 1 : btns.length - 1)) % btns.length].focus(); }
+    if (e.key === 'Escape' || e.key === 'Tab') { e.preventDefault(); closeMenu(true); }
+  };
+  menuFrom = document.activeElement;
+  btns[0].focus();
+  setTimeout(() => addEventListener('pointerdown', menuAway, true));
+}
+function setView(v) {
+  const p = cur();
+  if (p.view === v) return;
+  p.view = v; touch(p); changed();
 }
 
 function settings() {
@@ -1212,6 +1424,7 @@ function settings() {
 }
 function newProject() {
   const p = blankProject('New project');
+  p.view = cur().view;
   doc.projects.push(p);
   setCurrent(p.id); resetScroll = true; changed();
   settings();
@@ -1361,6 +1574,8 @@ function toast(msg, ms = 2600) {
 /* ---------- Start ---------- */
 $('#addTask').onclick = () => newTask(false);
 $('#emptyAdd').onclick = () => newTask(false);
+$('#emptyBoard').onclick = () => { setView('board'); $('#add-backlog')?.focus(); };
+document.querySelectorAll('#viewSeg [data-view]').forEach(b => b.onclick = () => setView(b.dataset.view));
 $('#addMilestone').onclick = () => newTask(true);
 $('#addGroup').onclick = () => newTask(false, true);
 $('#settingsBtn').onclick = settings;
