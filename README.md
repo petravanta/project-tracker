@@ -32,3 +32,7 @@ Nothing is uploaded. Projects are kept in your browser (`localStorage`). **Setti
 ## Running it
 
 It is a single static file, `index.html`, with no build step and no built-in data. Serve the folder (`python3 -m http.server`) and open it. GitHub Pages serves it from `main`, root folder.
+
+## License
+
+MIT, see [LICENSE](LICENSE).
