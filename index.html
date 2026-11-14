@@ -546,10 +546,10 @@ const durText = (t, p) => t.duration === 0 ? 'Milestone' : `${t.duration} ${p.wo
 /* ---------- Rendering ---------- */
 let sel = null, selDep = null;   // selected task id; selected link as "from>to"
 function render() {
-  const p = cur(), tasks = onPlan(), plan = schedule(p, tasks), board = p.view === 'board';
+  const p = cur(), tasks = onPlan(), plan = schedule(p, tasks), board = p.view === 'board', view = board ? 'board' : 'timeline';
   renderPicker();
-  $('main').dataset.view = p.view;
-  document.querySelectorAll('#viewSeg [data-view]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.view === p.view)));
+  $('main').dataset.view = view;
+  document.querySelectorAll('#viewSeg [data-view]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.view === view)));
   $('#board').hidden = !board;
   if (board) renderBoard(p);
   $('#empty').hidden = board || tasks.length > 0;
@@ -1383,7 +1383,7 @@ function cardMenu(id, x, y) {
 }
 function setView(v) {
   const p = cur();
-  if (p.view === v) return;
+  if ((p.view === 'board' ? 'board' : 'timeline') === v) return;
   p.view = v; touch(p); changed();
 }
 
