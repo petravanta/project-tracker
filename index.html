@@ -367,7 +367,7 @@ function upgrade(d) {
     t.deps = Array.isArray(t.deps) ? t.deps.filter(x => x && x.id) : [];
     t.color = COLORS.includes(t.color) ? t.color : 'teal';
     t.group = !!t.group; t.collapsed = !!t.collapsed; t.parent ??= null;
-    t.backlog = !!t.backlog && !t.group; t.doing = !!t.doing && !t.group; t.rank = Number.isFinite(t.rank) ? t.rank : t.order;
+    t.backlog = !!t.backlog && !t.group; t.doing = !!t.doing && !t.group;
     if (t.group) { t.deps = []; t.duration = 0; }
   });
   // A task's parent must be a group in the same project, and following parents must never come back round
@@ -380,6 +380,9 @@ function upgrade(d) {
     const seen = new Set([t.id]);
     for (let a = byId.get(t.parent); a; a = byId.get(a.parent)) { if (seen.has(a.id)) { t.parent = null; break; } seen.add(a.id); }
   }
+  // Cards without a board order take the timeline's order, groups and all
+  for (const pr of d.projects) treeOf(d.tasks.filter(t => t.project === pr.id).sort((a, b) => a.order - b.order)).all.forEach((t, i) => { if (!Number.isFinite(t.rank)) t.rank = i; });
+  d.tasks.forEach(t => { if (!Number.isFinite(t.rank)) t.rank = t.order; });
   d.version = 1;
   return d;
 }
