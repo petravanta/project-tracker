@@ -303,6 +303,7 @@ main[data-kind="board"] .tl-only{display:none}
   <section class="board" id="board" aria-label="Board" hidden></section>
   <p class="sr-only" id="live" aria-live="polite"></p>
 </main>
+<div data-version-footer></div>
 <div id="layer"></div>
 <input type="file" id="backupIn" accept="application/json,.json" hidden>
 <script>
@@ -1512,7 +1513,7 @@ $('#backupIn').onchange = async e => {
 /* ---------- Google Drive sync ----------
    Uses the drive.file scope, so the app can only see the one file it creates. */
 const DRIVE_FILE = 'Project Tracker data.json', DAPI = 'https://www.googleapis.com';
-const Drive = { token: null, exp: 0, fileId: lsGet('projectTracker.driveFile'), on: !!lsGet('projectTracker.driveOn'), busy: false, last: null, timer: null, err: null };
+const Drive = { token: null, exp: 0, fileId: lsGet('projectTracker.driveFile'), dir: lsGet('projectTracker.driveDir'), on: !!lsGet('projectTracker.driveOn'), busy: false, last: null, timer: null, err: null };
 // Keep the short-lived Google token across reloads so reopening the app doesn't pause sync
 (() => { const t = lsGet('projectTracker.driveTok'); if (Drive.on && t && t.exp > Date.now()) { Drive.token = t.token; Drive.exp = t.exp; } })();
 const driveConfigured = () => !!GOOGLE_CLIENT_ID;
@@ -1541,14 +1542,37 @@ async function dfetch(path, opt = {}) {
   if (!r.ok) throw { code: 'http', status: r.status };
   return r;
 }
+// Files live in petravanta/Project Tracker/ in the user's Drive, shared with the other apps (general STANDARDS.md, "Where it lives")
+const DRIVE_DIRS = ['petravanta', 'Project Tracker'], DFOLDER = 'application/vnd.google-apps.folder';
+const dq = v => "'" + String(v).replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "'";
+async function driveDir(name, parent) {
+  const q = encodeURIComponent(`name=${dq(name)} and mimeType='${DFOLDER}' and ${dq(parent)} in parents and trashed=false`);
+  const j = await (await dfetch(`/drive/v3/files?q=${q}&orderBy=createdTime&fields=files(id)`)).json();
+  if (j.files && j.files[0]) return j.files[0].id;
+  return (await (await dfetch('/drive/v3/files?fields=id', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, mimeType: DFOLDER, parents: [parent] }) })).json()).id;
+}
+async function driveHome() {
+  if (Drive.dir) return Drive.dir;
+  let p = 'root'; for (const n of DRIVE_DIRS) p = await driveDir(n, p);
+  Drive.dir = p; lsSet('projectTracker.driveDir', p); return p;
+}
+// One-time move of a file saved before folders into the app folder; moving keeps its id, so other devices carry on
+async function driveTidy(id) {
+  if (lsGet('projectTracker.driveMoved') === id) return;
+  const dir = await driveHome(), f = await (await dfetch(`/drive/v3/files/${id}?fields=parents`)).json(), ps = f.parents || [];
+  if (!ps.includes(dir)) await dfetch(`/drive/v3/files/${id}?addParents=${dir}` + (ps.length ? `&removeParents=${ps.join(',')}` : '') + '&fields=id', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+  lsSet('projectTracker.driveMoved', id);
+}
 async function driveFind() {
   if (Drive.fileId) {
-    try { const j = await (await dfetch(`/drive/v3/files/${Drive.fileId}?fields=id,trashed`)).json(); if (!j.trashed) return Drive.fileId; }
+    try { const j = await (await dfetch(`/drive/v3/files/${Drive.fileId}?fields=id,trashed`)).json(); if (!j.trashed) { await driveTidy(Drive.fileId); return Drive.fileId; } }
     catch (e) { if (e.code === 'expired') throw e; }
   }
-  const q = encodeURIComponent(`name='${DRIVE_FILE}' and trashed=false`);
-  const j = await (await dfetch(`/drive/v3/files?q=${q}&orderBy=modifiedTime desc&fields=files(id)`)).json();
-  Drive.fileId = j.files && j.files[0] ? j.files[0].id : null; lsSet('projectTracker.driveFile', Drive.fileId);
+  const dir = await driveHome(), list = async q => (await (await dfetch(`/drive/v3/files?q=${encodeURIComponent(q)}&orderBy=modifiedTime desc&fields=files(id)`)).json()).files || [];
+  const name = `name=${dq(DRIVE_FILE)} and trashed=false`;
+  const hit = (await list(`${name} and ${dq(dir)} in parents`))[0] || (await list(name))[0];
+  Drive.fileId = hit ? hit.id : null; lsSet('projectTracker.driveFile', Drive.fileId);
+  if (Drive.fileId) await driveTidy(Drive.fileId);
   return Drive.fileId;
 }
 async function driveRead() { const id = await driveFind(); return id ? (await dfetch(`/drive/v3/files/${id}?alt=media`)).json() : null; }
@@ -1556,7 +1580,7 @@ async function driveWrite() {
   const body = JSON.stringify({ app: 'project-tracker', ...doc });
   const id = await driveFind();
   if (id) { await dfetch(`/upload/drive/v3/files/${id}?uploadType=media`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body }); return; }
-  const b = 'pt' + uid().slice(0, 8), meta = JSON.stringify({ name: DRIVE_FILE, mimeType: 'application/json' });
+  const b = 'pt' + uid().slice(0, 8), meta = JSON.stringify({ name: DRIVE_FILE, mimeType: 'application/json', parents: [await driveHome()] });
   const multi = `--${b}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${meta}\r\n--${b}\r\nContent-Type: application/json\r\n\r\n${body}\r\n--${b}--`;
   const j = await (await dfetch('/upload/drive/v3/files?uploadType=multipart&fields=id', { method: 'POST', headers: { 'Content-Type': 'multipart/related; boundary=' + b }, body: multi })).json();
   Drive.fileId = j.id; lsSet('projectTracker.driveFile', j.id);
@@ -1599,13 +1623,13 @@ function driveSoon() {
 }
 function driveDisconnect() {
   if (Drive.token && window.google && google.accounts && google.accounts.oauth2) google.accounts.oauth2.revoke(Drive.token, () => {});
-  Drive.token = null; Drive.on = false; Drive.err = null; lsSet('projectTracker.driveOn', false); lsSet('projectTracker.driveTok', null); showDriveStatus();
+  Drive.token = null; Drive.on = false; Drive.err = null; lsSet('projectTracker.driveOn', false); lsSet('projectTracker.driveTok', null); Drive.dir = null; lsSet('projectTracker.driveDir', null); lsSet('projectTracker.driveMoved', null); showDriveStatus();
 }
 function drivePanel() {
   if (!driveConfigured()) return '<p class="small muted">Google Drive sync isn’t set up for this copy of the app.</p>';
   if (!Drive.on) return `<p class="small">Keep your projects in your own Google Drive and pick them up on any device. The app can only see the one file it creates there.</p>
     <div class="row" style="margin-top:8px"><button class="btn sm primary" type="button" data-drive="sync">Connect Google Drive</button></div>`;
-  return `<p class="small">${esc(driveStatus() || '')}. Changes save to <b>${esc(DRIVE_FILE)}</b> in your Drive a few seconds after you make them.</p>
+  return `<p class="small">${esc(driveStatus() || '')}. Changes save to <b>${esc(DRIVE_DIRS.join('/') + '/' + DRIVE_FILE)}</b> in your Drive a few seconds after you make them.</p>
     <div class="row" style="margin-top:8px">${driveLive() ? '<button class="btn sm" type="button" data-drive="sync">Sync now</button>' : '<button class="btn sm primary" type="button" data-drive="sync">Resume sync</button>'}
     <button class="btn sm ghost" type="button" data-drive="off">Disconnect</button></div>`;
 }
@@ -1672,6 +1696,7 @@ if (Drive.on) driveSync(false);   // the Drive copy may have changed on another 
 </script>
 <script src="https://petravanta.github.io/general/shared/hub-link.js" defer></script>
 <script src="https://petravanta.github.io/general/shared/theme-switch.js" defer></script>
+<script src="https://petravanta.github.io/general/shared/version-footer.js" defer></script>
 <script>if('serviceWorker' in navigator&&/^(petravanta\.github\.io|localhost|127\.0\.0\.1)$/.test(location.hostname))navigator.serviceWorker.register('sw.js').catch(function(){})</script>
 </body>
 </html>
